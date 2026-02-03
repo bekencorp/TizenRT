@@ -201,6 +201,7 @@ function copy_signed_files()
 
 function pack_secure_bin()
 {
+    python3 ${THIS_PATH}/psram_layout_check.py ${CONFIG}
 	make_ss_bin
 	install_bin_for_deployment
 	if [ "$CONFIG_BINARY_SIGNING" = "y" ]; then
