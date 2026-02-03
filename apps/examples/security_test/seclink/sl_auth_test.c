@@ -673,7 +673,7 @@ void sl_handle_auth_ecdsa_signature(sl_options *opt)
 
 void sl_handle_auth_ecdsa_verify(sl_options *opt)
 {
-	ST_SET_SMOKE1(sl_auth, opt->count, 0, "ecdsa sign", ecdsa_verify);
+	ST_SET_SMOKE1(sl_auth, opt->count, 0, "ecdsa verify", ecdsa_verify);
 }
 
 void sl_handle_auth_ed25519_signature(sl_options *opt)
@@ -703,7 +703,7 @@ void sl_handle_auth_get_cert(sl_options *opt)
 
 void sl_handle_auth_remove_cert(sl_options *opt)
 {
-	ST_SET_SMOKE(sl_auth, opt->count, 0, "Get certificate", get_certificate);
+	ST_SET_SMOKE(sl_auth, opt->count, 0, "Remove certificate", remove_certificate);
 }
 
 void sl_handle_auth(sl_options *opt)
