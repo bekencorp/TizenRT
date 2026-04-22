@@ -43,6 +43,7 @@ void hal_test_free_buffer(hal_data *data)
 int hal_test_malloc_buffer(hal_data *data, int buf_len)
 {
 	data->data = (unsigned char *)zalloc(buf_len);
+	data->data_len = buf_len;
 	if (!data->data) {
 		return -1;
 	}
