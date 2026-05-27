@@ -1298,6 +1298,9 @@ int rw_msg_send_connection_loss_ind(u8 vif_index)
 	struct mm_connection_loss_ind *ind = ke_msg_alloc(MM_CONNECTION_LOSS_IND,
 										 TASK_SM, TASK_API, sizeof(struct mm_connection_loss_ind));
 
+	if (!ind)
+		return -1;
+
 	// Fill-in the indication message parameters
 	ind->inst_nbr = vif_index;
 

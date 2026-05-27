@@ -181,6 +181,7 @@ __IRAM2 void rwm_check_rx_header_pattern(void *host_id)
 	{
 		RWNX_LOGE("host_id is NULL\n");
 		BK_ASSERT(0);
+		return;
 	}
 
 	p = (struct pbuf *)host_id;
@@ -194,6 +195,7 @@ __IRAM2 void rwm_check_rx_header_pattern(void *host_id)
 	{
 		RWNX_LOGE("rxhdr is NULL\n");
 		BK_ASSERT(0);
+		return;
 	}
 
 	if (rxhdr->pattern != DMA_HD_RXPATTERN)
@@ -569,7 +571,10 @@ void rwnx_upload_amsdu(struct fhost_rx_header *rxhdr)
 		if(i != 0) os_free((void *)rxhdr_addr);
 #endif
 		/* get the next sub-MSDU */
-		q = (struct pbuf *)(amsdu_hostids[++i]);
+		i++;
+		if (i >= NX_MAX_MSDU_PER_RX_AMSDU)
+			break;
+		q = (struct pbuf *)(amsdu_hostids[i]);
 	}
 }
 
