@@ -999,6 +999,7 @@ audio_manager_result_t parse_audio_metadata_json(void)
 	if (fd == -1) {
 		meddbg("Failed to open volume level json. errno: %d", errno);
 		free(buffer);
+		buffer = nullptr;
 		return AUDIO_MANAGER_OPERATION_FAIL;
 	}
 	ssize_t bytesRead = read(fd, buffer, jsonFileStat.st_size);
@@ -1006,6 +1007,7 @@ audio_manager_result_t parse_audio_metadata_json(void)
 		meddbg("Failed to read from volume level json. errno: %d", errno);
 		close(fd);
 		free(buffer);
+		buffer = nullptr;
 		return AUDIO_MANAGER_OPERATION_FAIL;
 	}
 	medvdbg("Total bytes read from volume level json: %d\n", bytesRead);
@@ -1014,10 +1016,12 @@ audio_manager_result_t parse_audio_metadata_json(void)
 		meddbg("Failed to parse volume level json file.\n");
 		close(fd);
 		free(buffer);
+		buffer = nullptr;
 		return AUDIO_MANAGER_OPERATION_FAIL;
 	}
 	close(fd);
 	free(buffer);
+	buffer = nullptr;
 	return AUDIO_MANAGER_SUCCESS;
 }
 
@@ -2293,6 +2297,39 @@ unsigned int get_card_buffer_size(audio_io_direction_t direct)
 	return buf_info.buffer_size;
 }
 
+unsigned int get_card_total_buffer_size(audio_io_direction_t direct)
+{
+	audio_card_info_t *card;
+	struct ap_buffer_info_s buf_info;
+	char path[AUDIO_DEVICE_FULL_PATH_LENGTH];
+	int fd;
+	if (direct == INPUT) {
+		if ((g_actual_audio_in_card_id < 0)) {
+			return 0;
+		}
+		card = &g_audio_in_cards[g_actual_audio_in_card_id];
+	} else {
+		if ((g_actual_audio_out_card_id < 0)) {
+			return 0;
+		}
+		card = &g_audio_out_cards[g_actual_audio_out_card_id];
+	}
+	get_card_path(path, card->card_id, card->device_id, direct);
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		meddbg("card open fail.. path : %s errno : %d\n", path, errno);
+		return 0;
+	}
+	if (ioctl(fd, AUDIOIOC_GETBUFFERINFO, (unsigned long)&buf_info) < 0) {
+		/* Driver doesn't reveal buffer size, so return default value we defined here */
+		meddbg("ioctl failed. errno : %d\n", errno);
+		buf_info.buffer_size = AUDIO_STREAM_VOICE_RECOGNITION_PERIOD_SIZE * (pcm_format_to_bits((enum pcm_format) PCM_FORMAT_S16_LE) >> 3);
+		buf_info.nbuffers = AUDIO_STREAM_VOICE_RECOGNITION_PERIOD_COUNT;
+	}
+	close(fd);
+	return buf_info.buffer_size * buf_info.nbuffers;
+}
+
 unsigned int get_input_card_buffer_size(void)
 {
 	return get_card_buffer_size(INPUT);
@@ -2301,6 +2338,16 @@ unsigned int get_input_card_buffer_size(void)
 unsigned int get_output_card_buffer_size(void)
 {
 	return get_card_buffer_size(OUTPUT);	
+}
+
+unsigned int get_input_card_total_buffer_size(void)
+{
+	return get_card_total_buffer_size(INPUT);
+}
+
+unsigned int get_output_card_total_buffer_size(void)
+{
+	return get_card_total_buffer_size(OUTPUT);
 }
 
 audio_manager_result_t get_max_audio_volume(uint8_t *volume)
@@ -3434,7 +3481,8 @@ std::chrono::milliseconds get_output_read_timeout(void)
 		}
 	}
 
-	frames = get_output_card_buffer_size() / channels / (pcm_format_to_bits(format) >> 3);
+	// ToDo: Calculate timeout as per the exact number of bytes currently enqueued in audio driver.
+	frames = get_output_card_total_buffer_size() / channels / (pcm_format_to_bits(format) >> 3);
 	timeout = (frames * std::chrono::milliseconds(1000)) / sample_rate;
 
 	pthread_mutex_unlock(&(card->card_mutex));
@@ -3662,6 +3710,87 @@ audio_manager_result_t change_input_dsp_flow(uint8_t dsp_flow_num)
 	pthread_mutex_unlock(&(card->card_mutex));
 	return ret;
 }
+
+#ifdef CONFIG_DUMP4CH_SUPPORT
+audio_manager_result_t start_audio_debug_dump_stream(int duration, int verbose, uint32_t *dev_extract_size)
+{
+	char path[AUDIO_DEVICE_FULL_PATH_LENGTH];
+	audio_card_info_t *card;
+	audio_manager_result_t ret;
+
+	if (dev_extract_size == NULL) {
+		return AUDIO_MANAGER_INVALID_PARAM;
+	}
+
+	if (g_actual_audio_in_card_id < 0) {
+		meddbg("Found no active input audio card\n");
+		return AUDIO_MANAGER_NO_AVAIL_CARD;
+	}
+	card = &g_audio_in_cards[g_actual_audio_in_card_id];
+
+	struct audio_debug_dump_stream_init_s stream_args;
+	stream_args.duration = duration;
+	stream_args.verbose = verbose;
+	stream_args.dev_extract_size = dev_extract_size;
+
+	medvdbg("start_audio_debug_dump_stream\n");
+	get_card_path(path, card->card_id, card->device_id, INPUT);
+	pthread_mutex_lock(&(card->card_mutex));
+
+	ret = control_audio_stream_device(path, AUDIOIOC_MULTI_CH_STREAM_INIT, (unsigned long)&stream_args);
+
+	pthread_mutex_unlock(&(card->card_mutex));
+	return ret;
+}
+
+audio_manager_result_t read_audio_debug_dump_stream(uint8_t *buffer, uint32_t *extracted_len)
+{
+	char path[AUDIO_DEVICE_FULL_PATH_LENGTH];
+	audio_card_info_t *card;
+	audio_manager_result_t ret;
+
+	if (buffer == NULL || extracted_len == NULL) {
+		return AUDIO_MANAGER_INVALID_PARAM;
+	}
+
+	if (g_actual_audio_in_card_id < 0) {
+		meddbg("Found no active input audio card\n");
+		return AUDIO_MANAGER_NO_AVAIL_CARD;
+	}
+	card = &g_audio_in_cards[g_actual_audio_in_card_id];
+
+	struct audio_debug_dump_stream_read_s read_args;
+	read_args.buffer = buffer;
+	read_args.extracted_len = extracted_len;
+
+	medvdbg("read_audio_debug_dump_stream\n");
+	get_card_path(path, card->card_id, card->device_id, INPUT);
+	pthread_mutex_lock(&(card->card_mutex));
+	ret = control_audio_stream_device(path, AUDIOIOC_MULTI_CH_STREAM_READ, (unsigned long)&read_args);
+	pthread_mutex_unlock(&(card->card_mutex));
+	return ret;
+}
+
+audio_manager_result_t stop_audio_debug_dump_stream(void)
+{
+	char path[AUDIO_DEVICE_FULL_PATH_LENGTH];
+	audio_card_info_t *card;
+	audio_manager_result_t ret;
+
+	medvdbg("stop_audio_debug_dump_stream\n");
+	if (g_actual_audio_in_card_id < 0) {
+		meddbg("Found no active input audio card\n");
+		return AUDIO_MANAGER_NO_AVAIL_CARD;
+	}
+	card = &g_audio_in_cards[g_actual_audio_in_card_id];
+
+	get_card_path(path, card->card_id, card->device_id, INPUT);
+	pthread_mutex_lock(&(card->card_mutex));
+	ret = control_audio_stream_device(path, AUDIOIOC_MULTI_CH_STREAM_DEINIT, 0);
+	pthread_mutex_unlock(&(card->card_mutex));
+	return ret;
+}
+#endif
 
 #ifdef CONFIG_DEBUG_MEDIA_INFO
 void dump_audio_card_info()

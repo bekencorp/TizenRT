@@ -91,7 +91,27 @@ up_signal_handler:
 
 	/* Save some register */
 
-	push		{lr}			/* Save LR on the stack */
+	push		{r12, lr}			/* Save R12 and LR on the stack = 8 byte alignment */
+
+#ifdef CONFIG_DEBUG
+	/* Verify the AAPCS 8-byte stack alignment before invoking the handler.
+	 * If the SP is only 4-byte aligned, the delivery-path contract has been
+	 * violated, so panic.  Present only when CONFIG_DEBUG is enabled, exactly
+	 * like DEBUGPANIC().
+	*/
+
+#ifdef CONFIG_ARCH_CORTEXA32
+	tst		sp, #7			/* SP 8-byte aligned? (low 3 bits == 0) */
+#else
+	mov		r12, sp			/* ARMv7-A: TST cannot use SP directly */
+	tst		r12, #7			/* R12 low 3 bits == 0? */
+#endif
+	beq		1f			/* Yes: proceed to the handler */
+	ldr		r0, =.Lsigsp_file	/* up_assert() filename argument - loads address of string */
+	movw		r1, #103			/* up_assert() linenum argument - immediate value */
+	bl		up_assert		/* Panic on misalignment; does not return */
+1:
+#endif
 
 	/* Call the signal handler */
 
@@ -103,14 +123,19 @@ up_signal_handler:
 
 	/* Restore the registers */
 
-	pop		{r2}			/* Recover LR in R2 */
-	mov		lr, r2			/* Restore LR */
+	pop		{r12, lr}			/* Restore R12 and LR */
 
 	/* Execute the SYS_signal_handler_return SVCall (will not return) */
 
 	mov		r0, #SYS_signal_handler_return
 	svc		#SYS_syscall
 	nop
+
+#if defined(CONFIG_DEBUG)
+	.align		2
+.Lsigsp_file:
+	.asciz		"arm_signal_handler.S"
+#endif
 
 	.size	up_signal_handler, .-up_signal_handler
 	.end

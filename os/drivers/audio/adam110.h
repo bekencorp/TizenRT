@@ -61,7 +61,7 @@
 #include <tinyara/pm/pm.h>
 
 #define ADAM110_MIC_GAIN_MAX		255
-#define ADAM110_MIC_GAIN_DEFAULT	128
+#define ADAM110_MIC_GAIN_DEFAULT	64  /* The default ADAM110 setting at 95 dB SPL is 0x40. This value corresponds to -12 dB and may need to be adjusted depending on the board configuration. */
 #define ADAM110_DEFAULT_SENSITIVITY	0xAAAA
 #define ADAM110_DEFAULT_SAMPLE_SIZE 3840
 
@@ -71,12 +71,14 @@
 #define ADAM110_RETRY_CNT			3
 #define ADAM110_FW_LOAD_RETRY_CNT   3
 #define ADAM110_HW_RST_WAIT			(50 * 1000)	/* Almost 30 ~ 50 msec */
-#define ADAM110_TXRX_DELAY			20 /* between tx and rx delay 20usec */ 
-#define ADAM110_COM_RES_DELAY		1 /* between command and respone imprecise */ 
+#define ADAM110_TXRX_DELAY			10 /* between tx and rx delay 10usec*/ 
+#define ADAM110_COM_RES_DELAY		1  /* between command and respone imprecise */
+#define ADAM110_RETRIAL_DELAY		1  /* Seamless buffer polling retry delay */
+#define SEAMLESS_RETRY_COUNT 		6
 
 #define ADAM110_RX_MAX_SIZE			3840
 #define ADAM110_KEYWORD_DATA_SIZE	64000
-#define ADAM110_MODEL_CHUNK_SIZE	256
+#define ADAM110_MODEL_CHUNK_SIZE	3840
 #define ADAM110_MODEL_RETRY_CNT		100
 
 #define ADAM110_FW_CHUNK_SIZE		128
@@ -121,12 +123,15 @@
 #define AUD_I2S_SET_STATE			0x21 /* Set Audio Output Enable / Disable */
 #define AUD_I2S_AEC_CTRL			0x22 /* Set AEC On/Off */
 #define AUD_PDM_SET_GAIN			0x30 /* Set PDM Gain */
+#define AUD_PDM_SET_CONFIG			0x31 /* Set PDM Configuration */
+#define AUD_PDM_SET_CLK				0x32 /* Set PDM Clock */
 #define AUD_GET_SEAMLESS_DATA		0x40 /* Get seamless audio data */
 #define AUD_GET_PREP_DATA			0x41 /* Get NPU preprocessed audio data */
-#define AUD_GET_MIC_DATA			0x42 /* */
-#define AUD_GET_I2S_DATA			0x43 /* */
+#define AUD_GET_MIC_DATA			0x42 /* Get PCM audio data */
+#define AUD_GET_I2S_DATA			0x43 /* Get I2S reference audio data */
 #define AUD_SET_DEBUG_MODE			0x44 /* Audio Debug Mode Enable/Disable */
 #define AUD_INT_EN					0x45 /* Audio Interrupt Enable/Disable */
+#define AUD_SET_MIC_DEBUG_MODE		0x46 /* Audio Mic Debug Mode Enable/Disable */
 
 /* AI Control */
 #define AC_UPDATE_MODEL				0x60 /* Set AI Model Update Mode */
@@ -136,6 +141,7 @@
 #define AC_PARA_TUNING				0x64 /* Set AI Model Parameter Tuning */
 #define AC_GET_MODEL_NAME			0x65 /* Get AI model name */
 #define AC_INT_EN					0x66 /* AI model Interrupt Enable/Disable */
+#define AC_GET_THD					0x67 /* Get AI Model Threshold Adjust */
 
 /* Firmware */
 #define FW_GET_VER					0xE0 /* Get FW Version */
@@ -146,6 +152,8 @@
 #define FW_GET_UPDATE_DATA			0xE5 /* Firmware data packet */
 #define FW_UPDATE_RSLT_CAL			0xE6 /* Firmware checksum calculation execute */
 #define FW_UPDATE_RSLT				0xE7 /* Firmware checksum read */
+
+#define PDM_CLOCK_PDM_RATE          0x00 /* PDM clock rate: 0 : PDM_CLK = 2MHz, 1 : PDM_CLK = 1MHz */
 
 /* Error code */
 #define RSLT_SUCCESS				0x00 /* Success */
@@ -195,18 +203,39 @@ typedef enum {
 	I2S_STREAM_TYPE_MAX
 } i2s_stream_type_t;
 
+typedef enum {
+	MIC_DEBUG_MODE_OFF = 0,	    /* Mic debug mode disable*/
+	MIC_DEBUG_LEFT_MODE = 1,	/* Mic debug left mode */
+	MIC_DEBUG_RIGHT_MODE = 2,	/* Mic debug right mode */
+} mic_debug_mode_type_t;
+
 /* AI Model */
 typedef enum {
 	AI_MODEL_HIBIXBY	= 1,	/* Hi-Bixby */
 	AI_MODEL_BIXBY,				/* Bixby */
-	AI_MODEL_ALEAX,				/* Alexa */
+	AI_MODEL_ALEXA,				/* Alexa */
+	AI_MODEL_CUSTOM1,    		/* Custom model 1 */
+	AI_MODEL_CUSTOM2,
+	AI_MODEL_CUSTOM3,
+	AI_MODEL_CUSTOM4,
 	AI_MODEL_MAX
 } ai_model_t;
+
+typedef enum {
+	WWD_HIBIXBY	= 0,		/* Hi-Bixby */
+	WWD_BIXBY,				/* Bixby */
+	WWD_ALEXA,				/* Alexa */
+	WWD_CUSTOM_MODEL1,    			/* Custom model 1 */
+	WWD_CUSTOM_MODEL2,
+	WWD_CUSTOM_MODEL3,
+	WWD_CUSTOM_MODEL4,
+	WWD_MODEL_MAX
+} ai_wwd_detec_t;
 
 /* AI Data */
 typedef enum {
 	AI_DATA_TYPE_SEAMLESS_R = 	0x01,		/* Keyword Detect Seamless data MIC Right */
-	AI_DATA_TYPE_SEAMLESS_L = 	0x02,		/* Keyword Detect Seamless data MIC Left */
+	AI_DATA_TYPE_MIC =          0x02,    	/* Debug raw PCM mic data */
 	AI_DATA_TYPE_AUDIO =		0x04,		/* Real Audio data */
 	AI_DATA_TYPE_MAX
 } ai_data_type_t;
@@ -255,14 +284,15 @@ struct adam110_dev_s {
 	FAR struct spi_dev_s *spi;
 
 #ifdef CONFIG_AUDIO_KEYWORD_DETECT
-	uint32_t keyword_bytes;
 	uint32_t keyword_bytes_left;
 	bool kd_enabled;
 	uint8_t *keyword_buffer;
+	bool seamless_in_progress;
 #endif
 
 	uint32_t sample_size;
 	volatile bool fw_loaded;
+	uint8_t dsp_flow;
 	uint16_t sensitivity;
 	uint32_t total_size;
 

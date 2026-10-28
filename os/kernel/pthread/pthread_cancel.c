@@ -96,7 +96,7 @@
 int pthread_cancel(pthread_t thread)
 {
 	FAR struct pthread_tcb_s *tcb;
-
+	irqstate_t flags;
 
 	/* First, make sure that the handle references a valid thread */
 
@@ -118,13 +118,28 @@ int pthread_cancel(pthread_t thread)
 		return ESRCH;
 	}
 
-	DEBUGASSERT((tcb->cmn.flags & TCB_FLAG_TTYPE_MASK) == TCB_FLAG_TTYPE_PTHREAD);
+	/* Only pthreads may be canceled through this interface; tasks and
+	 * kernel threads go through task_delete().
+	 */
+
+	if ((tcb->cmn.flags & TCB_FLAG_TTYPE_MASK) != TCB_FLAG_TTYPE_PTHREAD) {
+		return ESRCH;
+	}
 
 	/* Check to see if this thread has the non-cancelable bit set in its
 	 * flags. Suppress context changes for a bit so that the flags are stable.
 	 * (the flags should not change in interrupt handling.
+	 *
+	 * sched_lock() alone cannot keep the flags stable: the target thread may
+	 * be running on another CPU and change its own cancel state through
+	 * task_setcancelstate() at any time, and even on a single CPU it may run
+	 * and do so once the scheduler is unlocked below, long before
+	 * task_terminate() stops it.  Take the critical section, which
+	 * task_setcancelstate() also takes, so that this decision and the
+	 * target's cancel state transitions are strictly ordered.
 	 */
 
+	flags = enter_critical_section();
 	sched_lock();
 	if ((tcb->cmn.flags & TCB_FLAG_NONCANCELABLE) != 0) {
 		/* Then we cannot cancel the thread now.  Here is how this is
@@ -142,6 +157,7 @@ int pthread_cancel(pthread_t thread)
 
 		tcb->cmn.flags |= TCB_FLAG_CANCEL_PENDING;
 		sched_unlock();
+		leave_critical_section(flags);
 		return OK;
 	}
 
@@ -162,11 +178,13 @@ int pthread_cancel(pthread_t thread)
 		}
 
 		sched_unlock();
+		leave_critical_section(flags);
 		return OK;
 	}
 #endif
 
 	sched_unlock();
+	leave_critical_section(flags);
 
 	/* Check to see if the ID refers to ourselves.. this would be the
 	 * same as pthread_exit(PTHREAD_CANCELED).

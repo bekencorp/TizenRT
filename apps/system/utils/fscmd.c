@@ -1363,8 +1363,7 @@ enum fs_minor_num_e {
 };
 typedef enum fs_minor_num_e fs_minor_t;
 
-static int format_filesystem(fs_minor_t minor)
-{
+static int modify_filesystem(fs_minor_t minor, char *cmd) {
 	char name[CONFIG_PATH_MAX];
 	int fd;
 	int ret = ERROR;
@@ -1376,67 +1375,75 @@ static int format_filesystem(fs_minor_t minor)
 	for (int i = 0; i < 32; i++) {
 		snprintf(name, sizeof(name), "/dev/smart%dp%d", minor, i);
 		fd = open(name, O_RDWR);
-		if (fd < 0) {
-			/* Then Find littlefs */
+		if (fd >= 0) {
+			/* TODO Multi root of smartfs should be considered when it enabled */
+			if (strcmp(cmd, "format") == 0) {
+				ret = ioctl(fd, BIOC_BULKERASE, 1);
+			} else if (strcmp(cmd, "corrupt") == 0) {
+				ret = ioctl(fd, BIOC_CORRUPTION, 1);
+			}
+			close(fd);
+		} else {
+			/* Then find littlefs */
 			snprintf(name, sizeof(name), "/dev/little%dp%d", minor, i);
 			fd = open(name, O_RDWR);
 			if (fd < 0) {
 				continue;
 			}
-		}
-		/* TODO Multi root of smartfs should be considered when it enabled */
-		ret = ioctl(fd, BIOC_BULKERASE, 0);
-		close(fd);
-		if (ret != OK) {
-			printf("Low level format failed ret : %d errno : %d", ret, errno);
-			return ret;
-		}
-		break;
-	}
-	if (ret == OK) {
-		printf("Low level format finished, Please reboot device\n");
-	}
-	return ret;
-}
+			close(fd);
 
-static int corrupt_filesystem(fs_minor_t minor)
-{
-	char name[CONFIG_PATH_MAX];
-	int fd;
-	int ret = ERROR;
-
-	if ((minor < FS_BLOCK_MINOR_PRIMARY) || (minor > FS_BLOCK_MINOR_SECONDARY)) {
-		printf("Invalid minor number : %d", minor);
-		return ERROR;
-	}
-
-	for (int i = 0; i < 32; i++) {
-		snprintf(name, sizeof(name), "/dev/smart%dp%d", minor, i);
-		fd = open(name, O_RDWR);
-		if (fd < 0) {
-			/* Then Find littlefs */
-			snprintf(name, sizeof(name), "/dev/little%dp%d", minor, i);
-			fd = open(name, O_RDWR);
-			if (fd < 0) {
-				continue;
+			struct statfs fs_stat;
+			/* If lfs mounted properly, then create temp file and use ioctl */
+			if (statfs(CONFIG_MOUNT_POINT, &fs_stat) == OK &&
+				fs_stat.f_type == LITTLEFS_SUPER_MAGIC) {
+				snprintf(name, sizeof(name), "%s/fs_temp_file_%x", CONFIG_MOUNT_POINT, LITTLEFS_SUPER_MAGIC);
+				fd = open(name, O_RDWR | O_CREAT, 0666);
+				if (fd < 0) {
+					printf("Open Directory /mnt failed errno : %d", errno);
+					return ERROR;
+				}
+				if (strcmp(cmd, "format") == 0) {
+					ret = ioctl(fd, FIOC_RESERVE_FORMAT, 1);
+				} else if (strcmp(cmd, "corrupt") == 0) {
+					ret = ioctl(fd, FIOC_RESERVE_CORRUPT, 1);
+				}
+				close(fd);
+				if (ret < 0) {
+					return ret;	
+				}
+			} else {
+				if (strcmp(cmd, "format") == 0) {
+					/*
+					* When the filesystem is corrupted, CONFIG_MOUNT_POINT may have been created
+					* on the root filesystem. Mount to a temporary path to avoid removing or
+					* replacing the existing mount point.
+					*/
+					char tmp_name[CONFIG_PATH_MAX];
+					snprintf(tmp_name, sizeof(tmp_name), "%.*s_tmp/", (int)sizeof(CONFIG_MOUNT_POINT) - 2, CONFIG_MOUNT_POINT);
+					ret = mount(name, tmp_name, "littlefs", 0, (FAR const void *)"forceformat");
+					/* If mount failed because of broken file system, then use user data of mount */
+					if (ret < 0) {
+						return ret;
+					}
+				} else if (strcmp(cmd, "corrupt") == 0) {
+					printf("If it is not mounted, cannot reserve corrupt.\n");
+				}
 			}
 		}
-		/* TODO Multi root of smartfs should be considered when it enabled */
-		ret = ioctl(fd, BIOC_CORRUPTION, 0);
-
-		close(fd);
 		if (ret != OK) {
-			printf("Low level corrupt failed ret : %d errno : %d", ret, errno);
+			printf("Low level %s failed ret : %d errno : %d", cmd, ret, errno);
 			return ret;
 		}
 		break;
 	}
 	if (ret == OK) {
-		printf("Low level corrupt finished, Please reboot device\n");
+		printf("Low level %s finished, Please reboot device\n", cmd);
 	}
 	return ret;
 }
+
 #endif
+
 /****************************************************************************
  * Name: tash_format
  *
@@ -1453,9 +1460,9 @@ static int tash_format(int argc, char **args)
 	!defined(CONFIG_DISABLE_PSEUDOFS_OPERATIONS) && defined(CONFIG_BCH)
 
 	if (argc >= 2 && strncmp(args[1], "internal", strlen(args[1]) + 1) == 0) {
-		ret = format_filesystem(FS_BLOCK_MINOR_PRIMARY);
+		ret = modify_filesystem(FS_BLOCK_MINOR_PRIMARY, "format");
 	} else if (argc >= 2 && strncmp(args[1], "external", strlen(args[1]) + 1) == 0) {
-		ret = format_filesystem(FS_BLOCK_MINOR_SECONDARY);
+		ret = modify_filesystem(FS_BLOCK_MINOR_SECONDARY, "format");
 	} else {
 		printf("Usage: format [internal | external] \n");
 		ret = ERROR;
@@ -1483,9 +1490,9 @@ static int tash_corrupt(int argc, char **args)
 	!defined(CONFIG_DISABLE_PSEUDOFS_OPERATIONS) && defined(CONFIG_BCH)
 
 	if (argc >= 2 && strncmp(args[1], "internal", strlen(args[1]) + 1) == 0) {
-		ret = corrupt_filesystem(FS_BLOCK_MINOR_PRIMARY);
+		ret = modify_filesystem(FS_BLOCK_MINOR_PRIMARY, "corrupt");
 	} else if (argc >= 2 && strncmp(args[1], "external", strlen(args[1]) + 1) == 0) {
-		ret = corrupt_filesystem(FS_BLOCK_MINOR_SECONDARY);
+		ret = modify_filesystem(FS_BLOCK_MINOR_SECONDARY, "corrupt");
 	} else {
 		printf("Usage: corrupt [internal | external] \n");
 		ret = ERROR;

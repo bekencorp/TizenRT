@@ -67,6 +67,7 @@
 #include <tinyara/board.h>
 #include <tinyara/arch.h>
 #ifdef CONFIG_SYSTEM_REBOOT_REASON
+#include <arch/reboot_reason.h>
 #include <tinyara/reboot_reason.h>
 #endif
 
@@ -105,6 +106,9 @@
 int boardctl(unsigned int cmd, uintptr_t arg)
 {
 	int ret;
+#ifdef CONFIG_BOARDCTL_RESET
+	FAR struct tcb_s *tcb;
+#endif
 
 	switch (cmd) {
 	/*
@@ -154,13 +158,27 @@ int boardctl(unsigned int cmd, uintptr_t arg)
 		sched_lock();
 		/* Add 100ms delay for flushing another logs like printf. */
 		up_mdelay(100);
-		lldbg("Board will Reboot now. pid: %d\n", getpid());
+		tcb = sched_self();
+#if CONFIG_TASK_NAME_SIZE > 0
+		lldbg("Board will Reboot now. pid: %d, task: %s\n", tcb->pid, tcb->name);
+#else
+		lldbg("Board will Reboot now. pid: %d\n", tcb->pid);
+#endif
 #ifdef CONFIG_SYSTEM_REBOOT_REASON
 		if (!up_reboot_reason_is_written()) {
 			for (int i = 0; i < 10; i++) {
 				lldbg("\n    VIOLATION!!! YOU MUST SET REBOOT REASON!!!\n\n");
 			}
+
+#ifdef CONFIG_APP_BINARY_SEPARATION
+			if (((tcb->flags & TCB_FLAG_TTYPE_MASK) != TCB_FLAG_TTYPE_KERNEL)) {
+				up_reboot_reason_write(REBOOT_USER_WITHOUT_SET_REASON);
+			} else {
+				up_reboot_reason_write(REBOOT_SYSTEM_WITHOUT_SET_REASON);
+			}
+#else
 			up_reboot_reason_write(REBOOT_SYSTEM_WITHOUT_SET_REASON);
+#endif
 		}
 #endif
 		/* Add 100ms delay for flushing UART FIFO. */

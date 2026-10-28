@@ -256,6 +256,8 @@ int32_t bk_tr_ble_peripheral_notice_cb(ble_notice_t notice, void *param)
 
         hal_ble_con_env.con_dev[c_ind->conn_idx].con_status = HAL_CONN_STATE_CONNECTED;
         hal_ble_con_env.con_dev[c_ind->conn_idx].role = LINK_ROLE_SLAVE;
+        // Fresh connection: the link-layer connected report has not been sent yet.
+        hal_ble_con_env.con_dev[c_ind->conn_idx].app_connected = 0;
         hal_ble_con_env.con_dev[c_ind->conn_idx].peer_addr_type = c_ind->peer_addr_type;
         os_memcpy(hal_ble_con_env.con_dev[c_ind->conn_idx].peer_addr, c_ind->peer_addr, sizeof(c_ind->peer_addr));
 
@@ -278,8 +280,13 @@ int32_t bk_tr_ble_peripheral_notice_cb(ble_notice_t notice, void *param)
         ble_discon_ind_t *d_ind = (typeof(d_ind))param;
         LOGD("BLE_5_DISCONNECT_EVENT d_ind:conn_idx:%d,reason:0x%x", d_ind->conn_idx, d_ind->reason);
 
+        if (!hal_ble_con_env.con_dev[d_ind->conn_idx].app_connected &&
+            hal_ble_con_env.con_dev[d_ind->conn_idx].con_status == HAL_CONN_STATE_CONNECTED)
+        {
+            bk_tr_ble_server_report_connected_evt(d_ind->conn_idx, TRBLE_SERVER_LL_CONNECTED);
+        }
+
         hal_ble_con_env.con_dev[d_ind->conn_idx].con_status = HAL_CONN_STATE_DISCONNECTED;
-        hal_ble_con_env.con_dev[d_ind->conn_idx].role = LINK_ROLE_UNDEFINED;
         hal_ble_con_env.con_dev[d_ind->conn_idx].notify_pending_count = 0;
 
         hal_ble_env.slave_connected = 0;
@@ -291,8 +298,6 @@ int32_t bk_tr_ble_peripheral_notice_cb(ble_notice_t notice, void *param)
         elem.server_disconnect_evt.reason = d_ind->reason;
 
         ble_evt_queue_push_ext(EVT_BLE_SERVER_DISCONNECT, &elem, sizeof(ble_evt_msg_elem_t), NULL);
-
-        os_memset(hal_ble_con_env.con_dev[d_ind->conn_idx].peer_addr, 0, sizeof(hal_ble_con_env.con_dev[d_ind->conn_idx].peer_addr));
 
         if (hal_ble_con_env.con_dev[d_ind->conn_idx].connection_sem)
         {
@@ -478,7 +483,12 @@ int32_t bk_tr_ble_peripheral_notice_cb(ble_notice_t notice, void *param)
                 elem.attr_cb_evt.result = 0;
             }
 
-            ble_evt_queue_push_ext(EVT_BLE_SERVER_ATTR_CB, &elem, sizeof(ble_evt_msg_elem_t), NULL);
+            if (ble_evt_queue_push_ext(EVT_BLE_SERVER_ATTR_CB, &elem, sizeof(ble_evt_msg_elem_t), NULL))
+            {
+                LOGE("push queue err");
+                os_free(tmp_buffer);
+                tmp_buffer = NULL;
+            }
 
             //note: report data with trble_netmgr_attr_get_data
         }
@@ -1142,6 +1152,16 @@ int32_t bk_tr_ble_server_report_connected_evt(uint8_t conn_idx, uint8_t type)
     {
         LOGE("can't find conn_idx %d info", conn_idx);
         return TRBLE_FAIL;
+    }
+
+    if (type == TRBLE_SERVER_LL_CONNECTED)
+    {
+        if (hal_ble_con_env.con_dev[conn_idx].app_connected)
+        {
+            return TRBLE_SUCCESS;
+        }
+
+        hal_ble_con_env.con_dev[conn_idx].app_connected = 1;
     }
 
     LOGD("conn_idx %d adv_idx %d type %d", conn_idx, info->relate_adv_index, type);

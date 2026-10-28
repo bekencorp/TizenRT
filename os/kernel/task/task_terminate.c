@@ -80,9 +80,6 @@
 #endif
 #include "task/task.h"
 
-#ifdef CONFIG_TASK_MONITOR
-#include "task_monitor/task_monitor_internal.h"
-#endif
 #ifdef CONFIG_PREFERENCE
 #include "preference/preference.h"
 #endif
@@ -160,19 +157,32 @@ int task_terminate(pid_t pid, bool nonblocking)
 	irqstate_t flags;
 	uint8_t task_state;
 
-	/* Find for the TCB associated with matching PID */
+	/* Find the TCB associated with matching PID.  The lookup and the claim
+	 * below must happen under the same critical section so that only one
+	 * caller can start terminating a given task, and so that the task does
+	 * not become ready-to-run while we are futzing with its TCB.
+	 */
+
+	flags = enter_critical_section();
 
 	dtcb = sched_gettcb(pid);
 	if (!dtcb) {
 		/* This PID does not correspond to any known task */
+
+		leave_critical_section(flags);
 		return -ESRCH;
 	}
 
-	/* Make sure the task does not become ready-to-run while we are futzing with
-	 * its TCB by locking ourselves as the executing task.
+	/* If another path is already terminating this task, leave it to that
+	 * path.  Otherwise claim the termination for ourselves.
 	 */
 
-	flags = enter_critical_section();
+	if ((dtcb->flags & TCB_FLAG_EXIT_PROCESSING) != 0) {
+		leave_critical_section(flags);
+		return -ESRCH;
+	}
+
+	dtcb->flags |= TCB_FLAG_EXIT_PROCESSING;
 
 	/* Verify our internal sanity */
 
@@ -183,16 +193,23 @@ int task_terminate(pid_t pid, bool nonblocking)
 	            dtcb->task_state < NUM_TASK_STATES);
 #endif
 
-	/* Remove the task from the task list
-	 * before removing the task from the global tasklist, we are preserving its
-	 * task->state because later in the code, task_exithook() is called
-	 * task_exithook() -> task_recover() -> mq_recover() -> performs operations based
-	 * on tcb->task_state.
+	/* Remove the task from the task list.  sched_removereadytorun() marks the
+	 * task state as invalid, so preserve the original state across the call:
+	 * the recovery logic that task_exithook() runs later still needs it (see
+	 * sem_recover(), which keys off TSTATE_WAIT_SEM).
+	 *
+	 * Lock the scheduler across that window.  Without the scheduler lock, a
+	 * wake-up could switch to another task while dtcb still carries its
+	 * original (blocked) task_state although it is in no list anymore, and any
+	 * code inspecting dtcb during that window (e.g. signal delivery calling
+	 * sem_waitirq()) would operate on a half-deleted TCB.
 	 */
 
+	sched_lock();
 	task_state = dtcb->task_state;
 	sched_removereadytorun(dtcb);
 	dtcb->task_state = task_state;
+	sched_unlock();
 
 	/* At this point, the TCB should no longer be accessible to the system */
 
@@ -214,10 +231,6 @@ int task_terminate(pid_t pid, bool nonblocking)
 #endif
 
 
-#ifdef CONFIG_TASK_MONITOR
-	/* Unregister this pid from task monitor */
-	task_monitor_unregester_list(pid);
-#endif
 #ifdef CONFIG_PREFERENCE
 	preference_clear_callbacks(pid);
 #endif

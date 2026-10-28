@@ -165,9 +165,6 @@ static int binary_manager_load(int bin_idx)
 #ifdef CONFIG_OPTIMIZE_APP_RELOAD_TIME
 	struct binary_s *binp;
 #endif
-#ifdef CONFIG_USE_BP
-	bool need_update_bp = false;
-#endif
 
 	if (bin_idx < 0) {
 		bmdbg("Invalid bin idx %d\n", bin_idx);
@@ -203,11 +200,17 @@ static int binary_manager_load(int bin_idx)
 				bmdbg("%s Signature Checking Success\n", BIN_NAME(bin_idx));
 			} else {
 				bmdbg("Invalid Signature, name : %s, address : %p\n", BIN_NAME(bin_idx), BIN_PARTADDR(bin_idx, (BIN_USEIDX(bin_idx))));
+#ifdef CONFIG_USE_BP
+				/* If bp needs to be updated because either app or common binary is invalid */
+				/* Scan all binaries and set valid binary set in bootparam */
+				ret = binary_manager_recover_bootparam_set();
+				if (ret != BINMGR_OK) {
+					bmdbg("Failed to recover bootparam set mismatch, ret %d\n", ret);
+					return ERROR;
+				}
+#endif
 				if (--bin_count > 0) {
 					BIN_USEIDX(bin_idx) ^= 1;
-#ifdef CONFIG_USE_BP
-					need_update_bp = true;
-#endif
 					bmdbg("Try to read another partition %s\n", GET_PARTNAME(BIN_USEIDX(bin_idx)));
 					continue;
 				} else {
@@ -235,11 +238,19 @@ static int binary_manager_load(int bin_idx)
 				/* Clear version because of invalid binary */
 				BIN_VER(bin_idx, BIN_USEIDX(bin_idx)) = 0;
 				bmdbg("Invalid Header data, name : %s, devpath : %p\n", BIN_NAME(bin_idx), devpath);
+
+#ifdef CONFIG_USE_BP
+				/* If bp needs to be updated because either app or common binary is invalid */
+				/* Scan all binaries and set valid binary set in bootparam */
+				ret = binary_manager_recover_bootparam_set();
+				if (ret != BINMGR_OK) {
+					bmdbg("Failed to recover bootparam set mismatch, ret %d\n", ret);
+					return ERROR;
+				}
+#endif
+
 				if (--bin_count > 0) {
 					BIN_USEIDX(bin_idx) ^= 1;
-#ifdef CONFIG_USE_BP
-					need_update_bp = true;
-#endif
 					bmdbg("Try to read another partition %s\n", GET_PARTNAME(BIN_USEIDX(bin_idx)));
 					continue;
 				} else {
@@ -282,32 +293,21 @@ static int binary_manager_load(int bin_idx)
 
 		ret = binary_manager_load_binary(bin_idx, devpath, &load_attr);
 		if (ret == OK) {
-#ifdef CONFIG_USE_BP
-			if (need_update_bp) {
-				/* Update boot param data because the binary not written to bootparam is loaded */
-				binmgr_bpdata_t update_bp_data;
-				memcpy(&update_bp_data, binary_manager_get_bpdata(), sizeof(binmgr_bpdata_t));
-				update_bp_data.head.version++;
-				update_bp_data.head.format_ver = BOOTPARAM_FORMAT_VERSION_LATEST;
-				update_bp_data.head.app_data[BIN_BPIDX(bin_idx)].useidx ^= 1;
-				update_bp_data.tail.bp_update_reason = BP_UPDATE_BINARY_MANAGER_RECOVERY_USER;
-				ret = binary_manager_write_bootparam(&update_bp_data);
-				if (ret == BINMGR_OK) {
-					binary_manager_set_bpdata(&update_bp_data);
-					bmvdbg("Update bootparam SUCCESS\n");
-				} else {
-					bmdbg("Fail to update bootparam to recover, %d\n", ret);
-				}
-			}
-#endif
 			return BINMGR_OK;
 		}
+
+#ifdef CONFIG_USE_BP
+		/* If bp needs to be updated because binary load failed */
+		ret = binary_manager_recover_bootparam_set();
+		if (ret != BINMGR_OK) {
+			bmdbg("Failed to recover bootparam set mismatch, ret %d\n", ret);
+			return ERROR;
+		}
+#endif
+
 		if (--bin_count > 0) {
 			/* Change index 0 to 1 and 1 to 0. */
 			BIN_USEIDX(bin_idx) ^= 1;
-#ifdef CONFIG_USE_BP
-			need_update_bp = true;
-#endif
 			bmdbg("Try to read another partition %s\n", GET_PARTNAME(BIN_USEIDX(bin_idx)));
 		} else {
 			bmdbg("No valid binary %s\n", BIN_NAME(bin_idx));
@@ -617,24 +617,25 @@ static int reloading_thread(int argc, char *argv[])
 static int update_thread(int argc, char *argv[])
 {
 	int ret;
-#ifndef CONFIG_BINMGR_RELOAD_REBOOT 
 	int bin_idx;
 	uint32_t bin_count = binary_manager_get_ucount();
-#endif
 
-	/* Check whether there is binary for update.
+	if (argc <= 1) {
+		bmdbg("Invalid arguments, argc %d\n", argc);
+		return ERROR;
+	}
+
+	/* argv[1] is boot mode.
+	 * Check whether there is binary for update.
 	 * If kernel binary to update exists, board will be rebooted.
-	 * And if common or user biaries binary to update exist, it will be return BINMGR_OK.
+	 * And when CONFIG_BINMGR_RELOAD_REBOOT is enabled, common or user biaries binary to update exist, it will be rebooted.
+	 * Otherwise, it will be return BINMGR_OK.
 	 */
-	ret = binary_manager_check_update();
+	ret = binary_manager_check_update((int)atoi(argv[1]));
 	if (ret < 0) {
 		return ret;
 	}
 
-#ifdef CONFIG_BINMGR_RELOAD_REBOOT // Board Reset for binary reloading
-	printf("==> [REBOOT] Board will be rebooted for new binary loading");
-	binary_manager_reset_board(REBOOT_SYSTEM_BINARY_UPDATE);
-#else
 	/* Else, Reload all binaries */
 	for (bin_idx = 1; bin_idx <= bin_count; bin_idx++) {
 		if (BIN_STATE(bin_idx) == BINARY_LOADED || BIN_STATE(bin_idx) == BINARY_RUNNING) {
@@ -655,7 +656,7 @@ static int update_thread(int argc, char *argv[])
 #endif
 
 #ifdef CONFIG_RESOURCE_FS
-	ret = binary_manager_unmount_resource();
+	ret = binary_manager_umount_resource();
 	if (ret != OK) {
 		return BINMGR_OPERATION_FAIL;
 	}
@@ -674,7 +675,7 @@ static int update_thread(int argc, char *argv[])
 	if (ret != OK) {
 		return BINMGR_OPERATION_FAIL;
 	}
-#endif
+
 	return BINMGR_OK;
 }
 
@@ -732,26 +733,27 @@ void binary_manager_release_binary_sem(int bin_idx)
  *	 This function creates loading thread to load/unload binary.
  *
  ****************************************************************************/
-int binary_manager_execute_loader(int cmd, int bin_idx)
+int binary_manager_execute_loader(int cmd, int data)
 {
 	int ret;
+	int bin_idx;
 	uint8_t loader_priority;
 	main_t loader_func;
 	char data_str[2];
 	char *loading_data[LOADER_ARGC + 1];
 
-	if (bin_idx < 0 || bin_idx > USER_BIN_COUNT) {
-		bmdbg("Invalid binary index %d\n", bin_idx);
-		return ERROR;
-	}
-
 	memset(loading_data, 0, sizeof(char *) * (LOADER_ARGC + 1));
-	loading_data[0] = itoa(bin_idx, data_str, 10);
+	loading_data[0] = itoa(data, data_str, 10);
 	loading_data[1] = NULL;
 
 	loader_priority = LOADER_PRIORITY_HIGH;
 	switch (cmd) {
 	case LOADCMD_LOAD:
+		bin_idx = data;
+		if (bin_idx < 0 || bin_idx > USER_BIN_COUNT) {
+			bmdbg("Invalid binary index %d\n", bin_idx);
+			return ERROR;
+		}
 		loader_priority = binary_manager_get_loader_priority(BIN_LOAD_PRIORITY(bin_idx, BIN_USEIDX(bin_idx)));
 		if (loader_priority <= 0) {
 			bmdbg("Invalid loading priority : %u\n", BIN_LOAD_PRIORITY(bin_idx, BIN_USEIDX(bin_idx)));
@@ -781,7 +783,7 @@ int binary_manager_execute_loader(int cmd, int bin_idx)
 		bmvdbg("Execute loading thread with pid %d\n", ret);
 		ret = OK;
 	} else {
-		bmdbg("Fail to create loading thread for binary idx %d, errno %d\n", bin_idx, errno);
+		bmdbg("Fail to create loading thread for cmd %d, errno %d\n", cmd, errno);
 	}
 
 	return ret;

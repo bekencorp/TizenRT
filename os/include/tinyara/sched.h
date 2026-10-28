@@ -556,11 +556,9 @@ struct tcb_s {
 	uint8_t sched_priority;		/* Current priority of the thread      */
 
 #ifdef CONFIG_PRIORITY_INHERITANCE
-#if CONFIG_SEM_NNESTPRIO > 0
-	uint8_t npend_reprio;		/* Number of nested reprioritizations  */
-	uint8_t pend_reprios[CONFIG_SEM_NNESTPRIO];
-#endif
+	uint8_t boost_priority;		/* "Boosted" priority of the thread    */
 	uint8_t base_priority;		/* "Normal" priority of the thread     */
+	FAR struct semholder_s *holdsem;	/* List of held semaphores     */
 #endif
 
 	uint8_t task_state;			/* Current state of the thread         */
@@ -667,10 +665,6 @@ struct tcb_s {
 #if CONFIG_TASK_NAME_SIZE > 0
 	char name[CONFIG_TASK_NAME_SIZE + 1];	/* Task name (with NUL terminator)     */
 #endif
-#ifdef CONFIG_TASK_MONITOR
-	bool is_active;
-#endif
-
 	int fin_data;			/* Irq notification Data to be handled */
 	int pending_fin_data;		/* Pended irq notification data */
 };

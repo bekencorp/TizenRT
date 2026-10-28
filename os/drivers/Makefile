@@ -72,12 +72,10 @@ endif
 
 include analog$(DELIM)Make.defs
 include audio$(DELIM)Make.defs
-include ai-soc$(DELIM)Make.defs
 include bch$(DELIM)Make.defs
 include bluetooth$(DELIM)Make.defs
 include compression$(DELIM)Make.defs
 include cpuload$(DELIM)Make.defs
-include fota$(DELIM)Make.defs
 include gpio$(DELIM)Make.defs
 include prodconfig$(DELIM)Make.defs
 include memory$(DELIM)Make.defs
@@ -118,10 +116,6 @@ ifeq ($(CONFIG_DRVR_READAHEAD),y)
   CSRCS += rwbuffer.c
 endif
 endif
-endif
-
-ifeq ($(CONFIG_CAN),y)
-  CSRCS += can.c
 endif
 
 ifeq ($(CONFIG_DEV_URANDOM),y)
@@ -174,10 +168,6 @@ $(BIN): $(OBJS)
 	$(Q) touch $@
 
 depend: .depend
-
-ifeq ($(CONFIG_NDP120),y)
-context:
-endif
 
 clean:
 	$(call DELFILE, $(BIN))

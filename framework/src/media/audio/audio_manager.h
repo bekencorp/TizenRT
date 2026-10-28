@@ -488,6 +488,28 @@ unsigned int get_output_card_buffer_size(void);
 unsigned int get_input_card_buffer_size(void);
 
 /****************************************************************************
+ * Name: get_output_card_total_buffer_size
+ *
+ * Description:
+ *   Get total bytes size of record buffer of actual output card.
+ *
+ * Return Value:
+ *   On success, the total number of bytes in buffer size of output card. Otherwise, 0.
+ ****************************************************************************/
+unsigned int get_output_card_total_buffer_size(void);
+
+/****************************************************************************
+ * Name: get_input_card_total_buffer_size
+ *
+ * Description:
+ *   Get total bytes size of record buffer of actual input card.
+ *
+ * Return Value:
+ *   On success, the total number of bytes in buffer size of input card. Otherwise, 0.
+ ****************************************************************************/
+unsigned int get_input_card_total_buffer_size(void);
+
+/****************************************************************************
  * Name: get_max_audio_volume
  *
  * Description:
@@ -1038,6 +1060,50 @@ audio_manager_result_t get_kd_sensitivity(uint16_t *sensitivity);
  *   On success, AUDIO_MANAGER_SUCCESS. Otherwise, a negative value.
  ****************************************************************************/
 audio_manager_result_t change_input_dsp_flow(uint8_t dsp_flow_num);
+
+#ifdef CONFIG_DUMP4CH_SUPPORT
+/****************************************************************************
+ * Name: start_audio_debug_dump_stream
+ *
+ * Description:
+ *   Start audio debug dump stream
+ *
+ * Input parameter:
+ *   duration : streaming Term(s) , verbose : streaming info log , dev_extract_size : extracted debug dump data size via ndp120
+ *
+ * Return Value:
+ *   On success, AUDIO_MANAGER_SUCCESS. Otherwise, a negative value.
+ ****************************************************************************/
+audio_manager_result_t start_audio_debug_dump_stream(int duration, int verbose, uint32_t *dev_extract_size);
+
+/****************************************************************************
+ * Name: read_audio_debug_dump_stream
+ *
+ * Description:
+ *   Read audio debug dump stream
+ *
+ * Input parameter:
+ *   buffer : A buffer for echo-reference, left raw, right raw, and preprocessed audio data , extracted_len : extracted data length
+ *
+ * Return Value:
+ *   On success, AUDIO_MANAGER_SUCCESS. Otherwise, a negative value.
+ ****************************************************************************/
+audio_manager_result_t read_audio_debug_dump_stream(uint8_t *buffer, uint32_t *extracted_len);
+
+/****************************************************************************
+ * Name: stop_audio_debug_dump_stream
+ *
+ * Description:
+ *   Stop audio debug dump stream
+ *
+ * Input parameter:
+ *   None
+ *
+ * Return Value:
+ *   On success, AUDIO_MANAGER_SUCCESS. Otherwise, a negative value.
+ ****************************************************************************/
+audio_manager_result_t stop_audio_debug_dump_stream(void);
+#endif
 
 #ifdef CONFIG_DEBUG_MEDIA_INFO
 /****************************************************************************
