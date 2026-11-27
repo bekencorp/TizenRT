@@ -99,12 +99,6 @@ pm$(DELIM)libpm$(LIBEXT): context
 $(LIBRARIES_DIR)$(DELIM)libpm$(LIBEXT): pm$(DELIM)libpm$(LIBEXT)
 	$(Q) install pm$(DELIM)libpm$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libpm$(LIBEXT)
 
-logm$(DELIM)liblogm$(LIBEXT): context
-	$(Q) $(MAKE) $(JOBS) -C logm TOPDIR="$(TOPDIR)" liblogm$(LIBEXT) KERNEL=y EXTRADEFINES=$(KDEFINE)
-
-$(LIBRARIES_DIR)$(DELIM)liblogm$(LIBEXT): logm$(DELIM)liblogm$(LIBEXT)
-	$(Q) install logm$(DELIM)liblogm$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)liblogm$(LIBEXT)
-
 fs$(DELIM)libfs$(LIBEXT): context
 	$(Q) $(MAKE) $(JOBS) -C fs TOPDIR="$(TOPDIR)" libfs$(LIBEXT) KERNEL=y EXTRADEFINES=$(KDEFINE)
 
@@ -128,12 +122,6 @@ compression$(DELIM)libcompression$(LIBEXT): context
 
 $(LIBRARIES_DIR)$(DELIM)libcompression$(LIBEXT): compression$(DELIM)libcompression$(LIBEXT)
 	$(Q) install compression$(DELIM)libcompression$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libcompression$(LIBEXT)
-
-crypto$(DELIM)libcrypto$(LIBEXT): context
-	$(Q) $(MAKE) $(JOBS) -C crypto TOPDIR="$(TOPDIR)" libcrypto$(LIBEXT) KERNEL=y EXTRADEFINES=$(KDEFINE)
-
-$(LIBRARIES_DIR)$(DELIM)libcrypto$(LIBEXT): crypto$(DELIM)libcrypto$(LIBEXT)
-	$(Q) install crypto$(DELIM)libcrypto$(LIBEXT) $(LIBRARIES_DIR)$(DELIM)libcrypto$(LIBEXT)
 
 drivers$(DELIM)libdrivers$(LIBEXT): context
 	$(Q) $(MAKE) $(JOBS) -C drivers TOPDIR="$(TOPDIR)" libdrivers$(LIBEXT) KERNEL=y EXTRADEFINES=$(KDEFINE)

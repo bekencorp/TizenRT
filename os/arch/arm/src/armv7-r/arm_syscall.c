@@ -64,7 +64,6 @@
 #undef  CONFIG_DEBUG_ERROR
 #undef  CONFIG_DEBUG_WARN
 #undef  CONFIG_DEBUG_VERBOSE
-#undef  CONFIG_LOGM
 #define CONFIG_DEBUG 1
 #define CONFIG_DEBUG_ERROR 1
 #define CONFIG_DEBUG_WARN 1
@@ -275,9 +274,6 @@ uint32_t *arm_syscall(uint32_t *regs)
 
 		regs = (uint32_t *)regs[REG_R1];
 		DEBUGASSERT(regs);
-#ifdef CONFIG_TASK_MONITOR
-		rtcb->is_active = true;
-#endif
 	}
 	break;
 #endif

@@ -105,12 +105,6 @@ ifeq ($(CONFIG_PM),y)
 TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libpm$(LIBEXT)
 endif
 
-# Add libraries for logm module
-
-ifeq ($(CONFIG_LOGM),y)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)liblogm$(LIBEXT)
-endif
-
 # Add libraries for file system support
 
 ifeq ($(CONFIG_NFILE_DESCRIPTORS),0)
@@ -137,12 +131,6 @@ endif
 # Add libraries for the Compression sub-system
 ifeq ($(CONFIG_COMPRESSION),y)
 TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libcompression$(LIBEXT)
-endif
-
-# Add libraries for the Crypto sub-system
-
-ifeq ($(CONFIG_CRYPTO),y)
-TINYARALIBS += $(LIBRARIES_DIR)$(DELIM)libcrypto$(LIBEXT)
 endif
 
 ifeq ($(CONFIG_SE),y)

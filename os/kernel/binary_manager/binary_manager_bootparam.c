@@ -34,7 +34,6 @@
 
 /* Data for Boot parameters */
 static binmgr_bpinfo_t g_bp_info;
-static binmgr_bp_recovery_info_t g_bp_recovery_info;
 
 #define BP_SEEK_OFFSET(index)   (index == 0 ? 0 : BOOTPARAM_PARTSIZE / 2)
 #define FACTORY_BIN_VERSION     101
@@ -461,7 +460,7 @@ static bool binary_manager_is_set_mismatch(binmgr_bpdata_t *bp_data)
  *   bp_data is updated with the new version and active set.
  *
  ****************************************************************************/
-static int binary_manager_make_bootparam_from_partitions(binmgr_bpdata_t *bp_data, uint8_t set_idx, uint32_t version)
+static int binary_manager_make_bootparam_from_partitions(binmgr_bpdata_t *bp_data, uint8_t set_idx, uint32_t version, binmgr_bp_update_reason_e reason)
 {
 	uint32_t part_idx;
 	binmgr_kinfo_t *kdata;
@@ -484,7 +483,7 @@ static int binary_manager_make_bootparam_from_partitions(binmgr_bpdata_t *bp_dat
 	bp_data->head.version = version;
 	bp_data->head.format_ver = BOOTPARAM_FORMAT_VERSION_LATEST;
 	bp_data->head.active_idx = set_idx;
-	bp_data->tail.bp_update_reason = BP_UPDATE_BINARY_MANAGER_SET_ALIGNMENT;
+	bp_data->tail.bp_update_reason = (uint8_t)reason;
 
 	kdata = binary_manager_get_kdata();
 	if (!kdata) {
@@ -637,52 +636,85 @@ static uint32_t binary_manager_get_valid_set_highest_version(uint8_t set_idx)
 }
 
 /****************************************************************************
- * Name: binary_manager_check_bootparam_set
+ * Name: binary_manager_refresh_bp_recovery_info
  *
  * Description:
- *	 This function checks whether bootparam set recovery is required.
- *	 It returns BINMGR_OPERATION_FAIL to enter the recovery path.
+ *   Read BP and fill the caller's recovery information after a successful scan.
+ *   On scan failure, leave recovery information invalid so BP is rebuilt
+ *   from verified binary partitions without using cached BP data.
+ *   Return the scan result to the caller.
+ *   This function does not check set alignment.
  *
  ****************************************************************************/
-int binary_manager_check_bootparam_set(void)
+static int binary_manager_refresh_bp_recovery_info(binmgr_bp_recovery_info_t *recovery_info)
 {
 	int ret;
 	binmgr_bpdata_t *bp_data;
 
-	g_bp_recovery_info.has_valid_bp = false;
-	g_bp_recovery_info.inuse_idx = -1;
-	g_bp_recovery_info.active_set = -1;
-	g_bp_recovery_info.bp_version = -1;
+	memset(recovery_info, 0, sizeof(*recovery_info));
+	recovery_info->inuse_idx = -1;
+	recovery_info->active_set = -1;
+	recovery_info->bp_version = -1;
 
 	ret = binary_manager_update_bpinfo();
 	if (ret != BINMGR_OK) {
-		bmdbg("No valid BP. Run BP recovery from partition information\n");
+		bmdbg("Failed to scan BP, ret %d\n", ret);
+		return ret;
+	}
+
+	bp_data = binary_manager_get_bpdata();
+
+	recovery_info->has_valid_bp = true;
+	recovery_info->inuse_idx = g_bp_info.inuse_idx;
+	recovery_info->bp_version = bp_data->head.version;
+	recovery_info->active_set = bp_data->head.active_idx;
+
+	return ret;
+}
+
+/****************************************************************************
+ * Name: binary_manager_check_bootparam_set
+ *
+ * Description:
+ *   Set *update_reason and return BINMGR_OPERATION_FAIL when recovery is required.
+ *   Return BINMGR_OK when the bootparam set is valid and aligned.
+ *   Return BINMGR_INVALID_PARAM when update_reason is NULL.
+ *
+ ****************************************************************************/
+int binary_manager_check_bootparam_set(binmgr_bp_update_reason_e *update_reason)
+{
+	int ret;
+	binmgr_bpdata_t *bp_data;
+
+	if (update_reason == NULL) {
+		bmdbg("Invalid update_reason pointer\n");
+		return BINMGR_INVALID_PARAM;
+	}
+
+	ret = binary_manager_update_bpinfo();
+	if (ret != BINMGR_OK) {
+		bmdbg("Failed to update BP information for set check, ret %d\n", ret);
+		*update_reason = BP_UPDATE_BINARY_MANAGER_RECOVERY_NO_VALID_BP;
 		return BINMGR_OPERATION_FAIL;
 	}
 
 	bp_data = binary_manager_get_bpdata();
-	if (!bp_data) {
-		bmdbg("BP data is NULL. Run BP recovery from partition information\n");
-		return BINMGR_OPERATION_FAIL;
-	}
-
-	g_bp_recovery_info.has_valid_bp = true;
-	g_bp_recovery_info.inuse_idx = g_bp_info.inuse_idx;
-	g_bp_recovery_info.bp_version = bp_data->head.version;
-	g_bp_recovery_info.active_set = bp_data->head.active_idx;
 
 	if (binary_manager_is_set_mismatch(bp_data)) {
 		bmdbg("BP set mismatch detected. Run BP recovery from partition information\n");
+		*update_reason = BP_UPDATE_BINARY_MANAGER_RECOVERY_SET_ALIGNMENT;
 		return BINMGR_OPERATION_FAIL;
 	}
 
 	if (!binary_manager_is_bp_kernel_address_valid(bp_data)) {
 		bmdbg("Invalid in-use BP kernel address detected. Run BP recovery from partition information\n");
+		*update_reason = BP_UPDATE_BINARY_MANAGER_RECOVERY_KERNEL_ADDR_MISMATCH;
 		return BINMGR_OPERATION_FAIL;
 	}
 
 	if (bp_data->tail.bp_update_reason >= BP_UPDATE_BOOTLOADER_BP_CRC_FAIL && bp_data->tail.bp_update_reason <= BP_UPDATE_BOOTLOADER_SPECIFIC_3) {
 		bmdbg("Don't trust the recovery by bootloader, try to recover again.\n");
+		*update_reason = BP_UPDATE_BINARY_MANAGER_RECOVERY_BOOTLOADER_RECOVERED;
 		return BINMGR_OPERATION_FAIL;
 	}
 
@@ -694,10 +726,11 @@ int binary_manager_check_bootparam_set(void)
  * Name: binary_manager_recover_bootparam_set
  *
  * Description:
- *	 This function selects a valid binary set, writes an aligned BP, and reboots.
+ *   Refresh BP information, select a valid binary set, write an aligned BP,
+ *   and reboot.
  *
  ****************************************************************************/
-int binary_manager_recover_bootparam_set(void)
+int binary_manager_recover_bootparam_set(binmgr_bp_update_reason_e update_reason)
 {
 	int ret;
 	uint8_t target_set;
@@ -705,20 +738,29 @@ int binary_manager_recover_bootparam_set(void)
 	uint32_t new_version;
 	uint32_t target_version;
 	binmgr_bpdata_t update_bp_data;
+	binmgr_bp_recovery_info_t recovery_info;
 
-	bmdbg("BP set recovery required. valid BP %d, active idx %d, BP version %u\n", g_bp_recovery_info.has_valid_bp, g_bp_recovery_info.active_set, g_bp_recovery_info.bp_version);
+	/* Scan and Check BP data. If the scan fails, reconstruct BP from
+	 * directly verified binary partitions without using cached BP data.
+	 */
+	ret = binary_manager_refresh_bp_recovery_info(&recovery_info);
+	if (ret != BINMGR_OK) {
+		bmdbg("No scanned BP available, ret %d. Recover from partition information\n", ret);
+	}
 
-	g_bp_recovery_info.highest_version_a = binary_manager_get_valid_set_highest_version(0);
-	g_bp_recovery_info.highest_version_b = binary_manager_get_valid_set_highest_version(1);
+	bmdbg("BP set recovery required. valid BP %d, active idx %d, BP version %u\n", recovery_info.has_valid_bp, recovery_info.active_set, recovery_info.bp_version);
 
-	bmdbg("Set A highest version %u, Set B highest version %u\n", g_bp_recovery_info.highest_version_a, g_bp_recovery_info.highest_version_b);
+	recovery_info.highest_version_a = binary_manager_get_valid_set_highest_version(0);
+	recovery_info.highest_version_b = binary_manager_get_valid_set_highest_version(1);
 
-	if (g_bp_recovery_info.highest_version_a >= g_bp_recovery_info.highest_version_b) {
+	bmdbg("Set A highest version %u, Set B highest version %u\n", recovery_info.highest_version_a, recovery_info.highest_version_b);
+
+	if (recovery_info.highest_version_a >= recovery_info.highest_version_b) {
 		target_set = 0;
-		target_version = g_bp_recovery_info.highest_version_a;
+		target_version = recovery_info.highest_version_a;
 	} else {
 		target_set = 1;
-		target_version = g_bp_recovery_info.highest_version_b;
+		target_version = recovery_info.highest_version_b;
 	}
 
 	if (target_version == 0 || target_version == FACTORY_BIN_VERSION) {
@@ -729,15 +771,15 @@ int binary_manager_recover_bootparam_set(void)
 
 	bmdbg("Select set %s for BP set alignment by highest version %u\n", GET_PARTNAME(target_set), target_version);
 
-	new_version = g_bp_recovery_info.has_valid_bp ? g_bp_recovery_info.bp_version + 1 : 1;
-	ret = binary_manager_make_bootparam_from_partitions(&update_bp_data, target_set, new_version);
+	new_version = recovery_info.has_valid_bp ? recovery_info.bp_version + 1 : 1;
+	ret = binary_manager_make_bootparam_from_partitions(&update_bp_data, target_set, new_version, update_reason);
 	if (ret != BINMGR_OK) {
 		bmdbg("Fail to make recovery BP, ret %d. Reboot as recovery fail\n", ret);
 		binary_manager_reset_board(REBOOT_SYSTEM_BINARY_RECOVERYFAIL);
 		return ret;
 	}
 
-	write_bp_idx = g_bp_recovery_info.has_valid_bp ? (g_bp_recovery_info.inuse_idx ^ 1) : 0;
+	write_bp_idx = recovery_info.has_valid_bp ? (recovery_info.inuse_idx ^ 1) : 0;
 	ret = binary_manager_write_bootparam_to_slot(&update_bp_data, write_bp_idx);
 	if (ret != BINMGR_OK) {
 		bmdbg("Fail to write aligned BP, ret %d. Reboot as recovery fail\n", ret);

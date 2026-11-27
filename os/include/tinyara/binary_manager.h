@@ -138,6 +138,14 @@ enum binmgr_result_type {
 };
 typedef enum binmgr_result_type binmgr_result_type_e;
 
+/* Booting mode when binary is rebooted by binary manager */
+enum binmgr_boot_mode {
+	BOOTMODE_NORMAL = 0,
+	BOOTMODE_SILENT = 1,
+	BOOTMODE_MAX,
+};
+typedef enum binmgr_boot_mode binmgr_boot_mode_e;
+
 /****************************************************************************
  * Public Data
  ****************************************************************************/
@@ -299,11 +307,8 @@ void binary_manager_register_kpart(int part_num, int part_size, uint32_t part_ad
 void binary_manager_register_bppart(int part_num, int part_size);
 void binary_manager_register_upart(char *name, int part_num, int part_size, uint32_t part_addr);
 void binary_manager_register_respart(int part_num, int part_size, uint32_t part_addr);
+void binary_manager_early_initialize(void);
 int binary_manager_mount_resource(void);
-#ifdef CONFIG_USE_BP
-int binary_manager_check_bootparam_set(void);
-int binary_manager_recover_bootparam_set(void);
-#endif
 void binary_manager_deinit_modules(void);
 
 #ifdef __cplusplus

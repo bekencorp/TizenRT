@@ -65,7 +65,6 @@
 #undef  CONFIG_DEBUG_ERROR
 #undef  CONFIG_DEBUG_WARN
 #undef  CONFIG_DEBUG_VERBOSE
-#undef  CONFIG_LOGM
 #define CONFIG_DEBUG 1
 #define CONFIG_DEBUG_ERROR 1
 #define CONFIG_DEBUG_WARN 1
@@ -144,8 +143,13 @@ extern int g_irq_nums[3];
 #define CONFIG_BOARD_RESET_ON_ASSERT 0
 #endif
 
-#define IS_FAULT_IN_USER_THREAD(fault_tcb)  ((void *)fault_tcb->uheap != NULL)
-#define IS_FAULT_IN_USER_SPACE(asserted_location)   (is_kernel_space((void *)asserted_location) == false)
+#ifdef CONFIG_APP_BINARY_SEPARATION
+#define IS_FAULT_IN_USER_THREAD(fault_tcb)			((void *)fault_tcb->uheap != NULL)
+#define IS_FAULT_IN_USER_SPACE(asserted_location)	(is_kernel_space((void *)asserted_location) == false)
+#else
+#define IS_FAULT_IN_USER_THREAD(fault_tcb)			(false)
+#define IS_FAULT_IN_USER_SPACE(asserted_location)	(false)
+#endif
 
 #define NORMAL_STATE 0
 #define ABORT_STATE 1
@@ -175,10 +179,15 @@ static void up_stackdump(uint32_t sp, uint32_t stack_base)
 {
 	uint32_t stack = sp & ~0x1f;
 	uint32_t *ptr = (uint32_t *)stack;
+	uint32_t end = stack_base & ~3;
 	uint8_t i;
 
+	if (stack >= end) {
+		return;
+	}
+
 	lldbg("%08x:", stack);
-	for (i = 0; i < 8; i++) {  // Print first 8 values for sp located
+	for (i = 0; i < 8 && stack < end; i++) {  // Print first 8 values for sp located
 		if (stack < sp) {
 			/* If stack pointer(sp) is aligned(sp & 0x1f) to an address outside allocated stack */
 			/* Then, for stack addresses outside allocated stack, print 'xxxxxxxx' */
@@ -191,10 +200,19 @@ static void up_stackdump(uint32_t sp, uint32_t stack_base)
 	}
 	lldbg_noarg("\n");
 
-	for (; stack < stack_base; stack += 32) { // Print remaining stack values from 9th value to end
+	for (; end - stack >= 32; stack += 32) { // Print remaining stack values from 9th value to end
 		ptr = (uint32_t *)stack;
 		lldbg("%08x: %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			   stack, ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
+	}
+
+	if (stack < end) {
+		ptr = (uint32_t *)stack;
+		lldbg("%08x:", stack);
+		for (i = 0; stack < end; i++, stack += 4) {
+			lldbg_noarg(" %08x", ptr[i]);
+		}
+		lldbg_noarg("\n");
 	}
 }
 #else
@@ -555,6 +573,8 @@ static inline void print_assert_detail(const uint8_t *filename, int lineno, stru
 
 	up_dumpstate();
 
+	sem_showinfo();
+
 #ifdef CONFIG_APP_BINARY_SEPARATION
 	elf_show_all_bin_section_addr();
 #endif
@@ -599,10 +619,6 @@ void up_assert(const uint8_t *filename, int lineno)
 
 	board_led_on(LED_ASSERTION);
 
-#ifdef CONFIG_SYSTEM_REBOOT_REASON
-	reboot_reason_try_write_assert();
-#endif
-
 	uint32_t asserted_location;
 
 	abort_mode = true;
@@ -626,6 +642,10 @@ void up_assert(const uint8_t *filename, int lineno)
 	} else {
 		asserted_location = (uint32_t)GET_RETURN_ADDRESS();
 	}
+
+#ifdef CONFIG_SYSTEM_REBOOT_REASON
+	reboot_reason_try_write_assert(asserted_location);
+#endif
 
 #ifdef CONFIG_SECURITY_LEVEL
 	lldbg("security level: %d\n", get_security_level());
@@ -664,5 +684,3 @@ void up_assert(const uint8_t *filename, int lineno)
 		_up_assert(EXIT_FAILURE);
 	}
 }
-
-

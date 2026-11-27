@@ -94,12 +94,14 @@
 int task_setcancelstate(int state, FAR int *oldstate)
 {
 	FAR struct tcb_s *tcb = this_task();
+	irqstate_t flags;
 	int ret = OK;
 
 	/* Suppress context changes for a bit so that the flags are stable. (the
 	 * flags should not change in interrupt handling).
 	 */
 
+	flags = enter_critical_section();
 	sched_lock();
 
 	/* Return the current state if so requrested */
@@ -136,11 +138,16 @@ int task_setcancelstate(int state, FAR int *oldstate)
 			} else
 #endif
 			{
-			/* No.. We are using asynchronous cancellation.  If the
-			 * cancellation was pending in this case, then just exit.
-			 */
+				/* No.. We are using asynchronous cancellation.  If the
+				 * cancellation was pending in this case, then just exit.
+				 */
 
-			tcb->flags &= ~TCB_FLAG_CANCEL_PENDING;
+				tcb->flags &= ~TCB_FLAG_CANCEL_PENDING;
+
+				/* Termination may block, so release the locks first. */
+
+				sched_unlock();
+				leave_critical_section(flags);
 
 #ifndef CONFIG_DISABLE_PTHREAD
 				if ((tcb->flags & TCB_FLAG_TTYPE_MASK) == TCB_FLAG_TTYPE_PTHREAD) {
@@ -153,7 +160,10 @@ int task_setcancelstate(int state, FAR int *oldstate)
 			}
 		}
 	} else if (state == TASK_CANCEL_DISABLE) {
-	/* Set the non-cancelable state */
+		/* Only update the cancellation state.  exit() and pthread_exit()
+		 * disable cancellation before releasing resources, so dispatching
+		 * another exit from here would recursively enter termination.
+		 */
 
 		tcb->flags |= TCB_FLAG_NONCANCELABLE;
 	} else {
@@ -162,5 +172,6 @@ int task_setcancelstate(int state, FAR int *oldstate)
 	}
 
 	sched_unlock();
+	leave_critical_section(flags);
 	return ret;
 }

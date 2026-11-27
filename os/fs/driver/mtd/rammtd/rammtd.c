@@ -432,6 +432,19 @@ FAR struct mtd_dev_s *rammtd_initialize(FAR uint8_t *start, size_t size)
 	FAR struct ram_dev_s *priv;
 	size_t nblocks;
 
+	/* Force the size to be an even number of the erase block size */
+
+	nblocks = size / CONFIG_RAMMTD_ERASESIZE;
+	if (nblocks < 1) {
+		fdbg("Need to provide at least one full erase block\n");
+		return NULL;
+	}
+
+	size_t remain = size % CONFIG_RAMMTD_ERASESIZE;
+	if (remain != 0) {
+		fdbg("%zu bytes cannot be utilized; provide a multiple of %d bytes\n", remain, CONFIG_RAMMTD_ERASESIZE);
+	}
+
 	/* Create an instance of the RAM MTD device state structure */
 
 	priv = (FAR struct ram_dev_s *)kmm_zalloc(sizeof(struct ram_dev_s));
@@ -441,13 +454,6 @@ FAR struct mtd_dev_s *rammtd_initialize(FAR uint8_t *start, size_t size)
 	}
 	/* Use memset to initialize when it started, to guarantees cleaned space for sw reset */
 	memset(start, CONFIG_RAMMTD_ERASESTATE, size);
-	/* Force the size to be an even number of the erase block size */
-
-	nblocks = size / CONFIG_RAMMTD_ERASESIZE;
-	if (nblocks < 1) {
-		fdbg("Need to provide at least one full erase block\n");
-		return NULL;
-	}
 
 	/* Perform initialization as necessary. (unsupported methods were
 	 * nullified by kmm_zalloc).

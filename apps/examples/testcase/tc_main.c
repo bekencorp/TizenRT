@@ -75,9 +75,6 @@
 #if defined(CONFIG_EXAMPLES_TESTCASE_SYSTEMIO_UTC) || defined(CONFIG_EXAMPLES_TESTCASE_SYSTEMIO_ITC)
 #define TC_SYSTEMIO_STACK 2048
 #endif
-#if defined(CONFIG_EXAMPLES_TESTCASE_TASK_MANAGER_UTC) || defined(CONFIG_EXAMPLES_TESTCASE_TASK_MANAGER_ITC)
-#define TC_TASK_MANAGER_STACK  2048
-#endif
 #if defined(CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_UTC) || defined(CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_ITC)
 #define TC_WIFI_MANAGER_STACK  4096
 #endif
@@ -86,6 +83,15 @@
 #endif
 #ifdef CONFIG_EXAMPLES_TESTCASE_TCP_TLS_STRESS
 #define TC_TCP_TLS_STACK 8192
+#endif
+#ifdef CONFIG_STRESS_TASK_CREATE_TERM
+#define TC_STRESS_TASK_CREATE_TERM_STACK 2048
+#endif
+#ifdef CONFIG_STRESS_SEM_PRIO_INHERIT
+#define TC_STRESS_SEM_PRIO_INHERIT_STACK 2048
+#endif
+#ifdef CONFIG_STRESS_MM_SEM_SIGNAL
+#define TC_STRESS_MM_SEM_SIGNAL_STACK 2048
 #endif
 #endif
 
@@ -101,6 +107,9 @@ extern int tc_filesystem_main(int argc, char *argv[]);
 extern int tc_kernel_main(int argc, char *argv[]);
 extern int tc_network_main(int argc, char *argv[]);
 extern int tc_tcp_tls_main(int agrc, char *agrv[]);
+extern int stress_task_create_term_main(int argc, char *argv[]);
+extern int stress_sem_prio_inherit_main(int argc, char *argv[]);
+extern int stress_mm_sem_signal_main(int argc, char *argv[]);
 
 /* TinyAra Public API Test Case as ta_tc */
 extern int utc_arastorage_main(int argc, char *argv[]);
@@ -117,12 +126,15 @@ extern int itc_mqtt_main(int argc, char *argv[]);
 extern int utc_preference_main(int argc, char *argv[]);
 extern int utc_sysio_main(int argc, char *argv[]);
 extern int itc_sysio_main(int argc, char *argv[]);
-extern int utc_taskmanager_main(int argc, char *argv[]);
-extern int itc_taskmanager_main(int argc, char *argv[]);
 extern int utc_wifimanager_main(int argc, char *argv[]);
 extern int itc_wifimanager_main(int argc, char *argv[]);
 extern int utc_blemanager_main(int argc, char *argv[]);
 extern int itc_blemanager_main(int argc, char *argv[]);
+
+/* OS Test */
+#ifdef CONFIG_TESTING_OSTEST
+extern int ostest_main(int argc, char *argv[]);
+#endif
 
 /* Not yet */
 extern int tc_mpu_main(int argc, char *argv[]);
@@ -164,6 +176,9 @@ static const tash_cmdlist_t tc_cmds[] = {
 #ifdef CONFIG_EXAMPLES_TESTCASE_KERNEL
 	{"kernel_tc", tc_kernel_main, TASH_EXECMD_ASYNC},
 #endif
+#ifdef CONFIG_TESTING_OSTEST
+	{"ostest", ostest_main, TASH_EXECMD_ASYNC},
+#endif
 #ifdef CONFIG_LIBCXX_UTC
 	{"libcxx_utc", utc_libcxx_main, TASH_EXECMD_ASYNC},
 #endif
@@ -197,12 +212,6 @@ static const tash_cmdlist_t tc_cmds[] = {
 #ifdef CONFIG_EXAMPLES_TESTCASE_SYSTEMIO_ITC
 	{"sysio_itc", itc_sysio_main, TASH_EXECMD_ASYNC},
 #endif
-#ifdef CONFIG_EXAMPLES_TESTCASE_TASK_MANAGER_UTC
-	{"taskmgr_utc", utc_taskmanager_main, TASH_EXECMD_ASYNC},
-#endif
-#ifdef CONFIG_EXAMPLES_TESTCASE_TASK_MANAGER_ITC
-	{"taskmgr_itc", itc_taskmanager_main, TASH_EXECMD_ASYNC},
-#endif
 #ifdef CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_UTC
 	{"wifimgr_utc", utc_wifimanager_main, TASH_EXECMD_ASYNC},
 #endif
@@ -217,6 +226,15 @@ static const tash_cmdlist_t tc_cmds[] = {
 #endif
 #ifdef CONFIG_EXAMPLES_TESTCASE_TCP_TLS_STRESS
 	{"tcp_tls_stress", tc_tcp_tls_main, TASH_EXECMD_ASYNC},
+#endif
+#ifdef CONFIG_STRESS_TASK_CREATE_TERM
+	{"stress_ct", stress_task_create_term_main, TASH_EXECMD_ASYNC},
+#endif
+#ifdef CONFIG_STRESS_SEM_PRIO_INHERIT
+	{"stress_pi", stress_sem_prio_inherit_main, TASH_EXECMD_ASYNC},
+#endif
+#ifdef CONFIG_STRESS_MM_SEM_SIGNAL
+	{"stress_mmsem", stress_mm_sem_signal_main, TASH_EXECMD_ASYNC},
 #endif
 	{NULL, NULL, 0}
 };
@@ -405,12 +423,6 @@ int tc_main(int argc, char *argv[])
 		printf("System IO itc is not started, err = %d\n", pid);
 	}
 #endif
-#ifdef CONFIG_EXAMPLES_TESTCASE_TASK_MANAGER_UTC
-	pid = task_create("taskmgrutc", SCHED_PRIORITY_DEFAULT, TC_TASK_MANAGER_STACK, utc_taskmanager_main, argv);
-	if (pid < 0) {
-		printf("Task Manager utc is not started, err = %d\n", pid);
-	}
-#endif
 #ifdef CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_UTC
 	pid = task_create("wifimgrutc", SCHED_PRIORITY_DEFAULT, TC_WIFI_MANAGER_STACK, utc_wifimanager_main, argv);
 	if (pid < 0) {
@@ -439,6 +451,24 @@ int tc_main(int argc, char *argv[])
 	pid = task_create("tcptlstc", SCHED_PRIORITY_DEFAULT, TC_TCP_TLS_STACK, tc_tcp_tls_main, argv);
 	if (pid < 0) {
 		printf("TCP TLS STRESS testcase is not started, err %d\n", pid);
+	}
+#endif
+#ifdef CONFIG_STRESS_TASK_CREATE_TERM
+	pid = task_create("stress_ct", SCHED_PRIORITY_DEFAULT, TC_STRESS_TASK_CREATE_TERM_STACK, stress_task_create_term_main, argv);
+	if (pid < 0) {
+		printf("Task stress testcase is not started, err %d\n", pid);
+	}
+#endif
+#ifdef CONFIG_STRESS_SEM_PRIO_INHERIT
+	pid = task_create("stress_pi", SCHED_PRIORITY_DEFAULT, TC_STRESS_SEM_PRIO_INHERIT_STACK, stress_sem_prio_inherit_main, argv);
+	if (pid < 0) {
+		printf("Semaphore PI stress testcase is not started, err %d\n", pid);
+	}
+#endif
+#ifdef CONFIG_STRESS_MM_SEM_SIGNAL
+	pid = task_create("stress_mmsem", SCHED_PRIORITY_DEFAULT, TC_STRESS_MM_SEM_SIGNAL_STACK, stress_mm_sem_signal_main, argv);
+	if (pid < 0) {
+		printf("MM semaphore signal stress testcase is not started, err %d\n", pid);
 	}
 #endif
 

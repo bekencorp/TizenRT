@@ -295,7 +295,7 @@ static inline void task_saveparent(FAR struct tcb_s *tcb, uint8_t ttype)
 		 * the SA_NOCLDWAIT flag with sigaction().
 		 */
 
-		if ((rtcb->group->tg_flags && GROUP_FLAG_NOCLDWAIT) == 0) {
+		if ((rtcb->group->tg_flags & GROUP_FLAG_NOCLDWAIT) == 0) {
 			FAR struct child_status_s *child;
 
 			/* Make sure that there is not already a structure for this PID in the
@@ -524,11 +524,11 @@ static int thread_schedsetup(FAR struct tcb_s *tcb, int priority, start_t start,
 		tcb->fin_data = NO_FIN_DATA;
 
 		/* Add the task to the inactive task list */
-
-		sched_lock();
+		irqstate_t flags = enter_critical_section();
 		dq_addfirst((FAR dq_entry_t *)tcb, (dq_queue_t *)&g_inactivetasks);
 		tcb->task_state = TSTATE_TASK_INACTIVE;
-		sched_unlock();
+		leave_critical_section(flags);
+
 	}
 
 	return ret;

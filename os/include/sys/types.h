@@ -379,6 +379,7 @@ typedef struct pthread_barrierattr_s pthread_barrierattr_t;
  */
 struct pthread_cond_s {
 	sem_t sem;
+	volatile uint16_t waiters;  /* Explicit counter for threads waiting or preparing to wait */
 };
 typedef struct pthread_cond_s pthread_cond_t;
 
@@ -454,10 +455,6 @@ typedef CODE int (*main_t)(int argc, char *argv[]);
 /* pre-init application task entry point */
 
 typedef CODE int (*preapp_main_t)(int argc, char *argv[]);
-
-#ifdef CONFIG_TASK_MANAGER
-typedef CODE int (*task_manager_main_t)(int argc, char *argv[]);
-#endif
 
 #endif
 

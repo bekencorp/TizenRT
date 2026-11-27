@@ -39,7 +39,6 @@
 #define AES_BLOCK_SIZE          (16)
 #define AES128_KEY_SLOT         "ss/38" // slot where AES key is stored
 
-
 static int salt_aes_decrypt(char *input, unsigned int input_size, char *output, unsigned int output_size) 
 {
 	if ((input_size <= 0) || (input_size % AES_BLOCK_SIZE)) {
@@ -88,6 +87,7 @@ static int salt_aes_decrypt(char *input, unsigned int input_size, char *output, 
 
 	ret = crypto_aes_decryption(hnd, &aes_param, AES128_KEY_SLOT, &encrypt_data, &decrypt_data);
 	if (ret != SECURITY_OK) {
+		security_deinit(hnd);
 		printf("security_crypto : crypto_aes_decryption failed. ret : %d\n", ret);
 		return -1;
 	}
@@ -96,6 +96,8 @@ static int salt_aes_decrypt(char *input, unsigned int input_size, char *output, 
 	for (int i = 0; i < output_size; i++) {
 		output[i] = tmp[i];
 	}
+	security_free_data(&decrypt_data);
+	security_deinit(hnd);
 
 	return 1;
 }
@@ -207,6 +209,7 @@ void tash_check_security(int fd)
 		/* Allow reboot command regardless of TASH authentication */
 		#ifdef CONFIG_TASH_REBOOT
 		if (!strncmp((unsigned char *)input, "reboot", 7)) {
+			tash_free(input);
 			(void)tash_reboot(0, NULL);
 			return;
 		}
@@ -214,6 +217,7 @@ void tash_check_security(int fd)
 
 		/* Convert user input to pbkdf2 value */
 		if (get_pbkdf2(input, input_len, pbkdf2_salt, PBKDF2_SALT_LEN, CONFIG_TASH_HASH_ITERATION, input_pbkdf2_hex) < 0) {
+			tash_free(input);
 			return;
 		}
 

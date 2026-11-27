@@ -62,22 +62,16 @@ ASRCS =
 CSRCS =
 VPATH = .
 
-ifeq ($(CONFIG_TASK_MANAGER),y)
-CFLAGS += -I $(TOPDIR)/kernel
-endif
-
 # Include support for various drivers.  Each Make.defs file will add its
 # files to the source file list, add its DEPPATH info, and will add
 # the appropriate paths to the VPATH variable
 
 include analog$(DELIM)Make.defs
 include audio$(DELIM)Make.defs
-include ai-soc$(DELIM)Make.defs
 include bch$(DELIM)Make.defs
 include bluetooth$(DELIM)Make.defs
 include compression$(DELIM)Make.defs
 include cpuload$(DELIM)Make.defs
-include fota$(DELIM)Make.defs
 include gpio$(DELIM)Make.defs
 include prodconfig$(DELIM)Make.defs
 include memory$(DELIM)Make.defs
@@ -99,7 +93,6 @@ include serial$(DELIM)Make.defs
 include silent_reboot$(DELIM)Make.defs
 include spi$(DELIM)Make.defs
 include syslog$(DELIM)Make.defs
-include task_manager$(DELIM)Make.defs
 include usbdev$(DELIM)Make.defs
 include usbhost$(DELIM)Make.defs
 include video$(DELIM)Make.defs
@@ -170,10 +163,6 @@ $(BIN): $(OBJS)
 	$(Q) touch $@
 
 depend: .depend
-
-ifeq ($(CONFIG_NDP120),y)
-context:
-endif
 
 clean:
 	$(call DELFILE, $(BIN))

@@ -1,0 +1,36 @@
+#
+# For a description of the syntax of this configuration file,
+# see kconfig-language at https://www.kernel.org/doc/Documentation/kbuild/kconfig-language.txt
+#
+
+menuconfig EXAMPLES_TESTCASE_STRESS
+	bool "Stress TestCase Example"
+	default n
+	depends on EXAMPLES_TESTCASE
+	---help---
+		Enable the Stress TestCase Example
+
+if EXAMPLES_TESTCASE_STRESS
+config STRESS_TASK_CREATE_TERM
+	bool "Task create and terminate stress"
+	default n
+	---help---
+		Enable task creation and termination stress test
+		Infinite Test
+
+config STRESS_SEM_PRIO_INHERIT
+	bool "Semaphore priority inheritance stress"
+	default n
+	depends on PRIORITY_INHERITANCE
+	---help---
+		Enable semaphore priority inheritance stress test
+		Finite Test
+
+config STRESS_MM_SEM_SIGNAL
+	bool "MM semaphore signal stress"
+	default n
+	depends on !DISABLE_MQUEUE && !DISABLE_SIGNALS && !DISABLE_PTHREAD
+	---help---
+		Enable MM semaphore signal stress test
+		Infinite Test
+endif #EXAMPLES_TESTCASE_STRESS

@@ -50,7 +50,6 @@
 #undef CONFIG_DEBUG_ERROR
 #undef CONFIG_DEBUG_WARN
 #undef CONFIG_DEBUG_VERBOSE
-#undef CONFIG_LOGM
 #define CONFIG_DEBUG 1
 #define CONFIG_DEBUG_ERROR 1
 #define CONFIG_DEBUG_WARN 1
@@ -172,9 +171,15 @@ static void up_stackdump(uint32_t sp, uint32_t stack_base)
 {
 	uint32_t stack = sp & ~0x1f;
 	uint32_t *ptr = (uint32_t *)stack;
+	uint32_t end = stack_base & ~3;
 	uint8_t i;
+
+	if (stack >= end) {
+		return;
+	}
+
 	lldbg("%08x:", stack);
-	for (i = 0; i < 8; i++) {	// Print first 8 values for sp located
+	for (i = 0; i < 8 && stack < end; i++) {	// Print first 8 values for sp located
 		if (stack < sp) {
 			/* If stack pointer(sp) is aligned(sp & 0x1f) to an address outside allocated stack */
 			/* Then, for stack addresses outside allocated stack, print 'xxxxxxxx' */
@@ -187,9 +192,18 @@ static void up_stackdump(uint32_t sp, uint32_t stack_base)
 	}
 	lldbg_noarg("\n");
 
-	for (; stack < stack_base; stack += 32) {	// Print remaining stack values from 9th value to end
+	for (; end - stack >= 32; stack += 32) {	// Print remaining stack values from 9th value to end
 		ptr = (uint32_t *) stack;
 		lldbg("%08x: %08x %08x %08x %08x %08x %08x %08x %08x\n", stack, ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7]);
+	}
+
+	if (stack < end) {
+		ptr = (uint32_t *)stack;
+		lldbg("%08x:", stack);
+		for (i = 0; stack < end; i++, stack += 4) {
+			lldbg_noarg(" %08x", ptr[i]);
+		}
+		lldbg_noarg("\n");
 	}
 }
 
@@ -438,6 +452,8 @@ static void up_dumpstate(struct tcb_s *fault_tcb, uint32_t asserted_location)
 #endif
 
 }
+#else
+#define up_dumpstate(fault_tcb, asserted_location)
 #endif							/* CONFIG_ARCH_STACKDUMP */
 
 /****************************************************************************
@@ -563,6 +579,8 @@ static inline void print_assert_detail(const uint8_t *filename, int lineno, stru
 #endif							/* defined(CONFIG_DEBUG_WORKQUEUE) */
 	up_dumpstate(fault_tcb, asserted_location);
 
+	sem_showinfo();
+
 	/* Dump the state of all tasks (if available) */
 	task_show_alivetask_list();
 
@@ -621,9 +639,8 @@ void up_assert(const uint8_t *filename, int lineno)
 	board_autoled_on(LED_ASSERTION);
 
 #ifdef CONFIG_SYSTEM_REBOOT_REASON
-	reboot_reason_try_write_assert();
+	reboot_reason_try_write_assert(asserted_location);
 #endif
-
 
 #ifdef CONFIG_SECURITY_LEVEL
 	lldbg_noarg("security level: %d\n", get_security_level());

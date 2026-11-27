@@ -241,13 +241,6 @@ KERNDEPDIRS += compression
 endif
 CLEANDIRS += compression tools/compression
 
-# Add Crypto Module
-
-ifeq ($(CONFIG_CRYPTO),y)
-KERNDEPDIRS += crypto
-endif
-CLEANDIRS += crypto
-
 # Add networking directories to KERNDEPDIRS and CLEANDIRS
 
 ifeq ($(CONFIG_NET),y)
@@ -262,20 +255,9 @@ KERNDEPDIRS += pm
 endif
 CLEANDIRS += pm
 
-# Add Logger Module
-
-ifeq ($(CONFIG_LOGM),y)
-KERNDEPDIRS += logm
-endif
-CLEANDIRS += logm
-
 ifeq ($(CONFIG_SE),y)
 KERNDEPDIRS += se
 endif
 CLEANDIRS += se
-
-ifeq ($(CONFIG_NDP120),y)
-CONTEXTDIRS += drivers
-endif
 
 CLEANDIRS += userspace

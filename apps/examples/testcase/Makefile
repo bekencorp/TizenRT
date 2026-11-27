@@ -76,7 +76,8 @@ endif
 
 # BUILDIRS is the list of top-level directories containing Make.defs files
 
-BUILDIRS   := $(dir $(wildcard */*/Make.defs))
+BUILDIRS   := $(dir $(wildcard */Make.defs))
+BUILDIRS   += $(dir $(wildcard */*/Make.defs))
 BUILDIRS   += $(dir $(wildcard */*/*/Make.defs))
 
 define Add_Test
@@ -161,6 +162,9 @@ endif
 ifeq ($(CONFIG_EXAMPLES_TESTCASE_KERNEL),y)
 	$(Q) $(call REGISTER,kernel_tc,tc_kernel_main,TASH_EXECMD_ASYNC,180,4096)
 endif
+ifeq ($(CONFIG_TESTING_OSTEST),y)
+	$(Q) $(call REGISTER,ostest,ostest_main,TASH_EXECMD_ASYNC,100,8192)
+endif
 ifeq ($(CONFIG_LIBCXX_UTC),y)
 	$(Q) $(call REGISTER,libcxx_utc,utc_libcxx_main,TASH_EXECMD_ASYNC,100,4096)
 endif
@@ -194,20 +198,6 @@ endif
 ifeq ($(CONFIG_EXAMPLES_TESTCASE_SYSTEMIO_ITC),y)
 	$(Q) $(call REGISTER,sysio_itc,itc_sysio_main,TASH_EXECMD_ASYNC,100,2048)
 endif
-ifeq ($(CONFIG_EXAMPLES_TESTCASE_TASK_MANAGER_UTC),y)
-	$(Q) $(call REGISTER,taskmgr_utc,utc_taskmanager_main,TASH_EXECMD_ASYNC,100,2048)
-	$(Q) $(call REGISTER,tm_sample,tm_sample_main,TASH_EXECMD_ASYNC,101,2048)
-	$(Q) $(call REGISTER,tm_broadcast1,tm_broadcast1_main,TASH_EXECMD_ASYNC,101,1024)
-	$(Q) $(call REGISTER,tm_broadcast2,tm_broadcast2_main,TASH_EXECMD_ASYNC,101,1024)
-	$(Q) $(call REGISTER,tm_broadcast3,tm_broadcast3_main,TASH_EXECMD_ASYNC,101,1024)
-	$(Q) $(call REGISTER,tm_utc,tm_utc_main,TASH_EXECMD_ASYNC,101,2048)
-endif
-ifeq ($(CONFIG_EXAMPLES_TESTCASE_TASK_MANAGER_ITC),y)
-	$(Q) $(call REGISTER,taskmgr_itc,itc_taskmanager_main,TASH_EXECMD_ASYNC,100,2048)
-	$(Q) $(call REGISTER,tm_sample_itc,taskmanager_sample_main,TASH_EXECMD_ASYNC,101,2048)
-	$(Q) $(call REGISTER,tm_itc,tm_itc_main,TASH_EXECMD_ASYNC,101,2048)
-	$(Q) $(call REGISTER,start_itc_sampl,taskmanager_start_sample_main,TASH_EXECMD_ASYNC,101,2048)
-endif
 ifeq ($(CONFIG_EXAMPLES_TESTCASE_WIFI_MANAGER_UTC),y)
 	$(Q) $(call REGISTER,wifimgr_utc,utc_wifimanager_main,TASH_EXECMD_ASYNC,100,4096)
 endif
@@ -223,9 +213,14 @@ endif
 ifeq ($(CONFIG_EXAMPLES_TESTCASE_TCP_TLS_STRESS),y)
 	$(Q) $(call REGISTER,tcp_tls_stress,tc_tcp_tls_main,TASH_EXECMD_ASYNC,100,8192)
 endif
-
-ifeq ($(CONFIG_EXAMPLES_TESTCASE_EVENTLOOP_UTC),y)
-	$(Q) $(call REGISTER,eventloop_utc,utc_eventloop_main,TASH_EXECMD_ASYNC,100,2048)
+ifeq ($(CONFIG_STRESS_TASK_CREATE_TERM),y)
+	$(Q) $(call REGISTER,stress_ct,stress_task_create_term_main,TASH_EXECMD_ASYNC,100,2048)
+endif
+ifeq ($(CONFIG_STRESS_SEM_PRIO_INHERIT),y)
+	$(Q) $(call REGISTER,stress_pi,stress_sem_prio_inherit_main,TASH_EXECMD_ASYNC,100,2048)
+endif
+ifeq ($(CONFIG_STRESS_MM_SEM_SIGNAL),y)
+	$(Q) $(call REGISTER,stress_mmsem,stress_mm_sem_signal_main,TASH_EXECMD_ASYNC,100,2048)
 endif
 
 ifeq ($(CONFIG_EXAMPLES_TESTCASE_SECURITY_FRAMEWORK_UTC),y)

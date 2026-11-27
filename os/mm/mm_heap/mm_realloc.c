@@ -183,11 +183,17 @@ FAR void *mm_realloc(FAR struct mm_heap_s *heap, FAR void *oldmem, size_t size, 
 	next = (FAR struct mm_freenode_s *)((FAR char *)oldnode + oldnode->size);
 	if ((next->preceding & MM_ALLOC_BIT) == 0) {
 		nextsize = next->size;
+#ifdef CONFIG_DEBUG_MM_UAF
+		mm_uaf_verify(next);
+#endif
 	}
 
 	prev = (FAR struct mm_freenode_s *)((FAR char *)oldnode - (oldnode->preceding & ~MM_ALLOC_BIT));
 	if ((prev->preceding & MM_ALLOC_BIT) == 0) {
 		prevsize = prev->size;
+#ifdef CONFIG_DEBUG_MM_UAF
+		mm_uaf_verify(prev);
+#endif
 	}
 
 	/* Now, check if we can extend the current allocation or not */
@@ -286,15 +292,15 @@ FAR void *mm_realloc(FAR struct mm_heap_s *heap, FAR void *oldmem, size_t size, 
 				next->preceding     = newnode->size | (next->preceding & MM_ALLOC_BIT);
 			}
 
-			oldnode = newnode;
-			oldsize = newnode->size;
-
-			/* Now we have to move the user contents 'down' in memory.  memcpy should
-			 * should be save for this.
+			/* Move the user contents 'down' in memory. The source and destination
+			 * may overlap, so use memmove.
 			 */
 
 			newmem = (FAR void *)((FAR char *)newnode + SIZEOF_MM_ALLOCNODE);
-			memcpy(newmem, oldmem, oldsize - SIZEOF_MM_ALLOCNODE);
+			memmove(newmem, oldmem, oldsize - SIZEOF_MM_ALLOCNODE);
+
+			oldnode = newnode;
+			oldsize = newnode->size;
 		}
 
 		/* Extend into the next free chunk */

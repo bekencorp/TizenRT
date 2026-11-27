@@ -543,6 +543,18 @@ static ssize_t smartfs_read(FAR struct file *filep, char *buffer, size_t buflen)
 			goto errout_with_semaphore;
 		}
 
+#ifdef CONFIG_SMARTFS_USE_SECTOR_BUFFER
+		/* Sync data to prevent commit old data in sf->bflags.
+		 * Ex. Read->append->sync will commit wrong value of chain header.
+		 */
+		if (sf->bflags & SMARTFS_BFLAG_DIRTY) {
+			/* This must not be happened! */
+			fdbg("BUG!!! Flag is dirty!!\n", sf->currsector);
+		} else {
+			memcpy(sf->buffer, fs->fs_rwbuffer, fs->fs_llformat.availbytes);
+		}
+#endif
+
 		/* Point header to the read data to get used byte count */
 
 		header = (struct smartfs_chain_header_s *)fs->fs_rwbuffer;
@@ -582,10 +594,15 @@ static ssize_t smartfs_read(FAR struct file *filep, char *buffer, size_t buflen)
 		/* Test if we are at the end of the data in this sector */
 
 		if ((bytestoread == 0) || (sf->curroffset == fs->fs_llformat.availbytes)) {
-			/* Set the next sector as the current sector */
+			/* Do not read anymore */
+			if (SMARTFS_NEXTSECTOR(header) == SMARTFS_ERASEDSTATE_16BIT) {
+				break;
+			}
 
+			/* Set the next sector as the current sector */
 			sf->currsector = SMARTFS_NEXTSECTOR(header);
 			sf->curroffset = sizeof(struct smartfs_chain_header_s);
+
 		}
 	}
 
@@ -1250,13 +1267,16 @@ static int smartfs_bind(FAR struct inode *blkdriver, const void *data, void **ha
 
 	fs->fs_sem = &g_sem;
 	if (!g_seminitialized) {
-		sem_init(&g_sem, 0, 0);	/* Initialize the semaphore that controls access */
+		sem_init(&g_sem, 0, 1);	/* Initialize the semaphore that controls access */
 		g_seminitialized = TRUE;
-	} else {
-		/* Take the semaphore for the mount */
-
-		smartfs_semtake(fs);
 	}
+
+	/* Take the semaphore for the mount.  The semaphore is always taken
+	 * through smartfs_semtake() so that take and give stay strictly
+	 * paired and the holder's cancel state is saved and restored.
+	 */
+
+	smartfs_semtake(fs);
 
 	/* Initialize the allocated mountpt state structure.  The filesystem is
 	 * responsible for one reference on the blkdriver inode and does not

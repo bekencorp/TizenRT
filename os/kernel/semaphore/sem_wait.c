@@ -60,6 +60,7 @@
 #include <semaphore.h>
 #include <errno.h>
 #include <assert.h>
+#include <debug.h>
 #include <tinyara/arch.h>
 #include <tinyara/cancelpt.h>
 
@@ -127,14 +128,20 @@ int sem_wait(FAR sem_t *sem)
 	size_t caller_retaddr = (size_t)GET_RETURN_ADDRESS();
 	/* This API should not be called from interrupt handlers */
 #if defined(CONFIG_DEBUG_DISPLAY_SYMBOL) || defined(CONFIG_BINMGR_RECOVERY)
-	DEBUGASSERT((sem != NULL && up_interrupt_context() == false) || abort_mode);
+	DEBUGASSERT(up_interrupt_context() == false || abort_mode);
 
 	if (abort_mode && up_interrupt_context() == true) {
 		return OK;
 	}
 #else
-	DEBUGASSERT(sem != NULL && up_interrupt_context() == false);
+	DEBUGASSERT(up_interrupt_context() == false);
 #endif
+
+	/* Return EINVAL for NULL semaphore instead of crashing */
+	if (sem == NULL) {
+		set_errno(EINVAL);
+		return ERROR;
+	}
 
 	/* The following operations must be performed with interrupts
 	 * disabled because sem_post() may be called from an interrupt
@@ -158,6 +165,11 @@ int sem_wait(FAR sem_t *sem)
 
 		if ((sem->flags & FLAGS_SEM_MUTEX) != 0) {
 			ASSERT_INFO(sem->semcount < 2, "sem = 0x%x, semcount = %d, flags = 0x%x, caller address = 0x%x\n", sem, sem->semcount, sem->flags, caller_retaddr);
+#if defined(SAVE_SEM_HOLDER) && defined(CONFIG_DEBUG)
+			/* Detect self-deadlock before changing the count or wait state. */
+			FAR struct semholder_s *holder = sem_findholder(sem, rtcb);
+			DEBUGASSERT_INFO(holder == NULL || holder->counts <= 0, "mutex already held: sem = 0x%x, semcount = %d, flags = 0x%x, caller address = 0x%x\n", sem, sem->semcount, sem->flags, caller_retaddr);
+#endif
 		}
 
 		/* Check if the lock is available */

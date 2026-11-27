@@ -26,12 +26,6 @@ if DEV_URANDOM
 choice
 	prompt "/dev/urandom Algorithm"
 
-config DEV_URANDOM_RANDOM_POOL
-	bool "Entropy pool"
-	depends on CRYPTO_RANDOM_POOL
-         ---help---
-		Use the entropy pool CPRNG output for urandom algorithm.
-
 config DEV_URANDOM_XORSHIFT128
 	bool "xorshift128"
 	---help---
@@ -246,10 +240,6 @@ source drivers/video/Kconfig
 endif # DRIVERS_VIDEO
 
 source drivers/wifi_csi/Kconfig
-
-menu "AI SoC devices"
-source drivers/ai-soc/Kconfig
-endmenu
 
 source drivers/lcd/Kconfig
 
@@ -529,12 +519,6 @@ menuconfig USBHOST
 if USBHOST
 source drivers/usbhost/Kconfig
 endif # USBHOST
-
-config FOTA_DRIVER
-	bool "FOTA Device Driver Support"
-	default n
-	---help---
-		FOTA Device Driver
 
 source drivers/syslog/Kconfig
 source drivers/iotdev/Kconfig
